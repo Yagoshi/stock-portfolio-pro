@@ -515,18 +515,19 @@ def calculate_correlation_matrix(portfolio: list, period: str = "1y") -> pd.Data
 # 6. チャート生成関数群
 # ============================================================
 
-CHART_LAYOUT = dict(
-    paper_bgcolor="rgba(0,0,0,0)",
-    plot_bgcolor="rgba(0,0,0,0)",
-    font=dict(color="#F0F2F6", family="Noto Sans JP, sans-serif"),
-    margin=dict(l=40, r=20, t=40, b=40),
-    legend=dict(bgcolor="rgba(0,0,0,0)"),
-)
-
-CHART_AXIS_DEFAULTS = dict(
-    xaxis=dict(gridcolor="#2A3040", zerolinecolor="#2A3040"),
-    yaxis=dict(gridcolor="#2A3040", zerolinecolor="#2A3040"),
-)
+def base_layout(**overrides):
+    """ベースレイアウトにオーバーライドをマージして返すヘルパー"""
+    base = dict(
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="#F0F2F6", family="Noto Sans JP, sans-serif"),
+        margin=dict(l=40, r=20, t=40, b=40),
+        legend=dict(bgcolor="rgba(0,0,0,0)"),
+        xaxis=dict(gridcolor="#2A3040", zerolinecolor="#2A3040"),
+        yaxis=dict(gridcolor="#2A3040", zerolinecolor="#2A3040"),
+    )
+    base.update(overrides)
+    return base
 
 
 def create_donut_chart(holdings_df: pd.DataFrame, by: str = "sector") -> go.Figure:
@@ -553,13 +554,12 @@ def create_donut_chart(holdings_df: pd.DataFrame, by: str = "sector") -> go.Figu
         textfont=dict(size=12, color="#F0F2F6"),
         hovertemplate="<b>%{label}</b><br>¥%{value:,.0f}<br>%{percent}<extra></extra>",
     )])
-    fig.update_layout(
-        **CHART_LAYOUT,
+    fig.update_layout(**base_layout(
         showlegend=True,
         legend=dict(orientation="h", yanchor="bottom", y=-0.15, xanchor="center", x=0.5,
                     font=dict(size=11, color="#8B95A5")),
         height=400,
-    )
+    ))
     return fig
 
 
@@ -593,14 +593,12 @@ def create_performance_chart(portfolio: list, period: str = "1y",
                 line=dict(color="#3B82F6", width=2, dash="dot"),
             ))
 
-    fig.update_layout(
-        **CHART_LAYOUT,
-        **CHART_AXIS_DEFAULTS,
+    fig.update_layout(**base_layout(
         yaxis_title="リターン (%)",
         hovermode="x unified",
         height=420,
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-    )
+    ))
     return fig
 
 
@@ -631,8 +629,7 @@ def create_candlestick_chart(ticker: str, period: str = "6mo") -> go.Figure:
         name="出来高", yaxis="y2",
     ))
 
-    fig.update_layout(
-        **CHART_LAYOUT,
+    fig.update_layout(**base_layout(
         yaxis=dict(title="価格", gridcolor="#2A3040", side="left"),
         yaxis2=dict(title="出来高", overlaying="y", side="right",
                     showgrid=False, range=[0, hist["Volume"].max() * 4]),
@@ -640,7 +637,7 @@ def create_candlestick_chart(ticker: str, period: str = "6mo") -> go.Figure:
         xaxis_rangeslider_visible=False,
         height=450,
         showlegend=False,
-    )
+    ))
     return fig
 
 
@@ -669,10 +666,9 @@ def create_treemap(holdings_df: pd.DataFrame) -> go.Figure:
         textfont=dict(size=14, color="#F0F2F6"),
         hovertemplate="<b>%{label}</b><br>評価額: ¥%{value:,.0f}<extra></extra>",
     ))
-    fig.update_layout(
-        **CHART_LAYOUT,
+    fig.update_layout(**base_layout(
         height=400,
-    )
+    ))
     return fig
 
 
@@ -693,12 +689,11 @@ def create_correlation_heatmap(portfolio: list, period: str = "1y") -> go.Figure
         textfont=dict(size=12, color="#F0F2F6"),
         hovertemplate="<b>%{x} × %{y}</b><br>相関: %{z:.3f}<extra></extra>",
     ))
-    fig.update_layout(
-        **CHART_LAYOUT,
+    fig.update_layout(**base_layout(
         yaxis=dict(gridcolor="#2A3040", zerolinecolor="#2A3040"),
         height=400,
         xaxis=dict(side="bottom", gridcolor="#2A3040", zerolinecolor="#2A3040"),
-    )
+    ))
     return fig
 
 
@@ -721,14 +716,12 @@ def create_return_histogram(returns: pd.Series) -> go.Figure:
                   annotation_text=f"平均: {mean_ret:.3f}%")
     fig.add_vline(x=0, line_dash="solid", line_color="#8B95A5", line_width=1)
 
-    fig.update_layout(
-        **CHART_LAYOUT,
-        **CHART_AXIS_DEFAULTS,
+    fig.update_layout(**base_layout(
         xaxis_title="日次リターン (%)",
         yaxis_title="頻度",
         height=350,
         showlegend=False,
-    )
+    ))
     return fig
 
 
