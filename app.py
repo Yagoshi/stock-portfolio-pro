@@ -521,6 +521,9 @@ CHART_LAYOUT = dict(
     font=dict(color="#F0F2F6", family="Noto Sans JP, sans-serif"),
     margin=dict(l=40, r=20, t=40, b=40),
     legend=dict(bgcolor="rgba(0,0,0,0)"),
+)
+
+CHART_AXIS_DEFAULTS = dict(
     xaxis=dict(gridcolor="#2A3040", zerolinecolor="#2A3040"),
     yaxis=dict(gridcolor="#2A3040", zerolinecolor="#2A3040"),
 )
@@ -592,6 +595,7 @@ def create_performance_chart(portfolio: list, period: str = "1y",
 
     fig.update_layout(
         **CHART_LAYOUT,
+        **CHART_AXIS_DEFAULTS,
         yaxis_title="リターン (%)",
         hovermode="x unified",
         height=420,
@@ -632,6 +636,7 @@ def create_candlestick_chart(ticker: str, period: str = "6mo") -> go.Figure:
         yaxis=dict(title="価格", gridcolor="#2A3040", side="left"),
         yaxis2=dict(title="出来高", overlaying="y", side="right",
                     showgrid=False, range=[0, hist["Volume"].max() * 4]),
+        xaxis=dict(gridcolor="#2A3040", zerolinecolor="#2A3040"),
         xaxis_rangeslider_visible=False,
         height=450,
         showlegend=False,
@@ -690,8 +695,9 @@ def create_correlation_heatmap(portfolio: list, period: str = "1y") -> go.Figure
     ))
     fig.update_layout(
         **CHART_LAYOUT,
+        yaxis=dict(gridcolor="#2A3040", zerolinecolor="#2A3040"),
         height=400,
-        xaxis=dict(side="bottom"),
+        xaxis=dict(side="bottom", gridcolor="#2A3040", zerolinecolor="#2A3040"),
     )
     return fig
 
@@ -717,6 +723,7 @@ def create_return_histogram(returns: pd.Series) -> go.Figure:
 
     fig.update_layout(
         **CHART_LAYOUT,
+        **CHART_AXIS_DEFAULTS,
         xaxis_title="日次リターン (%)",
         yaxis_title="頻度",
         height=350,
