@@ -760,7 +760,7 @@ def restore_from_url():
 def generate_share_url(portfolio: list) -> str:
     """共有URLを生成"""
     encoded = encode_portfolio(portfolio)
-    base_url = "https://your-app-name.streamlit.app/"
+    base_url = "https://stock-portfolio-pro-3rv7hhykj6dcwxzqpopvl8.streamlit.app/"
     return f"{base_url}?p={encoded}"
 
 
