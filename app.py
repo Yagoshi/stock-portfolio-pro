@@ -1070,33 +1070,25 @@ def render_sidebar():
         st.markdown("---")
         st.markdown("### ➕ 銘柄を追加")
 
-        # ── 入力モード切替（サジェスト / 自由入力） ──
-        input_mode = st.toggle(
-            "📝 自由入力モード", value=False,
-            help="ONにするとリストにない銘柄も手動入力できます",
+        # ── サジェストリスト（フォーム外で選択 → session_state に保持） ──
+        catalog_options = ["（リストから選択）"] + [
+            f"{t}  —  {n}" for t, n in TICKER_CATALOG.items()
+        ]
+        selected_from_list = st.selectbox(
+            "📋 主要銘柄から選択",
+            options=catalog_options,
+            index=0,
+            help="検索窓に銘柄名やティッカーを入力して絞り込めます",
+            key="ticker_suggest",
         )
 
         with st.form("add_stock", clear_on_submit=True):
-            if input_mode:
-                # 自由入力モード（従来どおり）
-                ticker = st.text_input(
-                    "ティッカー",
-                    placeholder="例: AAPL, 7203.T",
-                    help="日本株は .T を付ける（例: 7203.T）",
-                )
-            else:
-                # サジェスト選択モード
-                options = [f"{t}  —  {n}" for t, n in TICKER_CATALOG.items()]
-                selected = st.selectbox(
-                    "銘柄を検索・選択",
-                    options=["（選択してください）"] + options,
-                    index=0,
-                    help="検索窓に銘柄名やティッカーを入力して絞り込めます",
-                )
-                if selected and selected != "（選択してください）":
-                    ticker = selected.split("  —  ")[0].strip()
-                else:
-                    ticker = ""
+            # 自由入力欄（リストにない銘柄用 / 直接入力したい場合）
+            manual_ticker = st.text_input(
+                "ティッカー（手動入力）",
+                placeholder="例: AAPL, 7203.T（上のリストにない場合）",
+                help="上のリストで選択済みならここは空欄でOKです。日本株は .T を付けてください。",
+            )
 
             col1, col2 = st.columns(2)
             with col1:
@@ -1106,14 +1098,23 @@ def render_sidebar():
             buy_date = st.date_input("取得日", value=datetime.now())
             submitted = st.form_submit_button("✅ 追加", use_container_width=True)
 
-            if submitted and ticker and shares > 0 and cost_price > 0:
-                st.session_state["portfolio"].append({
-                    "ticker": ticker.strip().upper(),
-                    "shares": shares,
-                    "cost_price": cost_price,
-                    "buy_date": str(buy_date),
-                })
-                st.rerun()
+            if submitted:
+                # 手動入力を優先、なければリスト選択を使用
+                if manual_ticker.strip():
+                    ticker = manual_ticker.strip().upper()
+                elif selected_from_list and selected_from_list != "（リストから選択）":
+                    ticker = selected_from_list.split("  —  ")[0].strip()
+                else:
+                    ticker = ""
+
+                if ticker and shares > 0 and cost_price > 0:
+                    st.session_state["portfolio"].append({
+                        "ticker": ticker,
+                        "shares": shares,
+                        "cost_price": cost_price,
+                        "buy_date": str(buy_date),
+                    })
+                    st.rerun()
 
         # 保有銘柄一覧
         if st.session_state["portfolio"]:
