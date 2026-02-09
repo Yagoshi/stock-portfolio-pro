@@ -1526,9 +1526,12 @@ def aggregate_dividend_by_month(portfolio: list) -> pd.DataFrame:
         div_history = fetch_dividend_history(ticker)
         
         if not div_history.empty:
-            # インデックスがdatetimeであることを確認
-            if not isinstance(div_history.index, pd.DatetimeIndex):
-                div_history.index = pd.to_datetime(div_history.index)
+            # インデックスをタイムゾーン非依存のdatetimeに変換
+            if isinstance(div_history.index, pd.DatetimeIndex):
+                # タイムゾーンを削除（UTC正規化）
+                div_history.index = div_history.index.tz_localize(None)
+            else:
+                div_history.index = pd.to_datetime(div_history.index).tz_localize(None)
             
             # 配当金額に保有株数を掛ける
             div_history["Amount"] = div_history["Dividend"] * item["shares"]
@@ -1581,12 +1584,15 @@ def calculate_dividend_metrics(portfolio: list) -> pd.DataFrame:
         div_history = fetch_dividend_history(ticker)
         
         if not div_history.empty:
-            # インデックスがdatetimeであることを確認
-            if not isinstance(div_history.index, pd.DatetimeIndex):
-                div_history.index = pd.to_datetime(div_history.index)
+            # インデックスをタイムゾーン非依存のdatetimeに変換
+            if isinstance(div_history.index, pd.DatetimeIndex):
+                # タイムゾーンを削除（UTC正規化）
+                div_history.index = div_history.index.tz_localize(None)
+            else:
+                div_history.index = pd.to_datetime(div_history.index).tz_localize(None)
             
-            # 年間配当金（過去1年分）
-            one_year_ago = pd.Timestamp(datetime.now() - timedelta(days=365))
+            # 年間配当金（過去1年分）- タイムゾーン非依存
+            one_year_ago = pd.Timestamp(datetime.now()).tz_localize(None) - pd.Timedelta(days=365)
             recent_divs = div_history[div_history.index > one_year_ago]
             annual_dividend = recent_divs["Dividend"].sum() if not recent_divs.empty else 0
             
@@ -1597,7 +1603,7 @@ def calculate_dividend_metrics(portfolio: list) -> pd.DataFrame:
             dividend_yield = (annual_dividend / current_price * 100) if current_price > 0 else 0
             
             # 増配傾向の分析（過去3年）
-            three_years_ago = pd.Timestamp(datetime.now() - timedelta(days=3*365))
+            three_years_ago = pd.Timestamp(datetime.now()).tz_localize(None) - pd.Timedelta(days=3*365)
             recent_divs_3y = div_history[div_history.index > three_years_ago]["Dividend"]
             
             if len(recent_divs_3y) >= 2:
