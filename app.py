@@ -2600,11 +2600,56 @@ def render_sidebar():
                 help="上のリストで選択済みならここは空欄でOKです。日本株は .T を付けてください。",
             )
 
+            # 株数入力
+            shares = st.number_input("保有株数", min_value=0.0, value=0.0, step=1.0)
+            
+            # 入力方法の選択
+            st.markdown("##### 📊 取得価格の入力方法")
+            input_method = st.radio(
+                "入力方法を選択",
+                ["取得単価を入力", "現在の評価額を入力"],
+                horizontal=True,
+                help="取得単価がわからない場合は、現在の評価額から自動計算します。",
+            )
+            
             col1, col2 = st.columns(2)
-            with col1:
-                shares = st.number_input("株数", min_value=0.0, value=0.0, step=1.0)
-            with col2:
-                cost_price = st.number_input("取得単価", min_value=0.0, value=0.0, step=0.01)
+            
+            if input_method == "取得単価を入力":
+                with col1:
+                    cost_price = st.number_input(
+                        "取得単価（1株あたり）", 
+                        min_value=0.0, 
+                        value=0.0, 
+                        step=0.01,
+                        help="購入時の1株あたりの価格",
+                    )
+                with col2:
+                    st.caption("")  # スペーサー
+                    st.caption("")  # スペーサー
+                    if cost_price > 0 and shares > 0:
+                        total_cost = cost_price * shares
+                        st.metric("取得総額", f"¥{total_cost:,.0f}")
+                    
+                current_value_input = None
+                
+            else:  # 現在の評価額を入力
+                with col1:
+                    current_value_input = st.number_input(
+                        "現在の評価額（総額）", 
+                        min_value=0.0, 
+                        value=0.0, 
+                        step=100.0,
+                        help="現在この銘柄が何円分になっているか",
+                    )
+                with col2:
+                    st.caption("")  # スペーサー
+                    st.caption("")  # スペーサー
+                    if current_value_input > 0 and shares > 0:
+                        implied_price = current_value_input / shares
+                        st.metric("推定取得単価", f"¥{implied_price:,.2f}")
+                
+                cost_price = None
+            
             buy_date = st.date_input("取得日", value=datetime.now())
             submitted = st.form_submit_button("✅ 追加", use_container_width=True)
 
@@ -2617,14 +2662,49 @@ def render_sidebar():
                 else:
                     ticker = ""
 
-                if ticker and shares > 0 and cost_price > 0:
+                if ticker and shares > 0:
+                    # 取得単価の計算
+                    if input_method == "取得単価を入力":
+                        if cost_price <= 0:
+                            st.error("取得単価を入力してください")
+                            st.stop()
+                        final_cost_price = cost_price
+                    else:  # 現在の評価額から逆算
+                        if current_value_input <= 0:
+                            st.error("現在の評価額を入力してください")
+                            st.stop()
+                        
+                        # 現在価格を取得
+                        with st.spinner(f"{ticker} の現在価格を取得中..."):
+                            info = fetch_stock_info(ticker)
+                            current_price = info["current_price"]
+                            
+                            if current_price == 0:
+                                hist = fetch_stock_data(ticker, period="5d")
+                                if not hist.empty:
+                                    current_price = float(hist["Close"].iloc[-1])
+                            
+                            if current_price == 0:
+                                st.error(f"{ticker} の現在価格を取得できませんでした")
+                                st.stop()
+                        
+                        # 取得単価を逆算
+                        # 現在の評価額 = 現在価格 × 株数
+                        # 取得単価 = 現在価格 × (現在の評価額 / (現在価格 × 株数))
+                        actual_current_value = current_price * shares
+                        final_cost_price = current_price * (current_value_input / actual_current_value)
+                    
                     st.session_state["portfolio"].append({
                         "ticker": ticker,
                         "shares": shares,
-                        "cost_price": cost_price,
+                        "cost_price": final_cost_price,
                         "buy_date": str(buy_date),
                     })
+                    st.success(f"✅ {ticker} を追加しました！")
+                    time.sleep(0.5)
                     st.rerun()
+                else:
+                    st.error("ティッカーと株数を正しく入力してください")
 
         # 保有銘柄一覧
         if st.session_state["portfolio"]:
