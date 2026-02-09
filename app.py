@@ -2255,6 +2255,260 @@ def create_annual_dividend_chart(monthly_dividends: pd.DataFrame) -> go.Figure:
 
 
 # ============================================================
+# 8.8 ★新機能★ 注目株スキャン関連の関数
+# ============================================================
+
+def get_sector_for_ticker(ticker: str) -> str:
+    """ティッカーからセクターを推定"""
+    # テクノロジー
+    tech_tickers = {"AAPL", "MSFT", "GOOGL", "GOOG", "AMZN", "META", "NVDA", "AMD", "INTC", 
+                   "AVGO", "ORCL", "ADBE", "CRM", "CSCO", "ACN", "IBM", "QCOM", "TXN", 
+                   "AMAT", "MU", "LRCX", "KLAC", "SNPS", "CDNS", "MRVL", "NXPI", "SHOP", 
+                   "PYPL", "SNOW", "PLTR", "CRWD", "NET", "DDOG", "ZS", "OKTA", "TEAM", 
+                   "NOW", "WDAY", "PANW", "FTNT", "6758.T", "6501.T", "6752.T", "6503.T", 
+                   "6702.T", "6701.T", "6594.T", "6841.T", "6857.T", "6861.T", "8035.T", 
+                   "6920.T", "6146.T", "6981.T", "6723.T"}
+    
+    # 金融
+    finance_tickers = {"JPM", "BAC", "WFC", "C", "GS", "MS", "BLK", "SCHW", "AXP", "V", "MA", 
+                      "COIN", "SOFI", "HOOD", "AFRM", "USB", "PNC", "TFC", "COF", "BK", "STT", 
+                      "AIG", "MET", "PRU", "ALL", "PGR", "TRV", "CB", "8306.T", "8316.T", 
+                      "8411.T", "8591.T", "8604.T", "8601.T", "7182.T", "8750.T", "8766.T", 
+                      "8725.T", "8630.T"}
+    
+    # ヘルスケア
+    healthcare_tickers = {"JNJ", "UNH", "PFE", "ABBV", "LLY", "MRK", "TMO", "ABT", "DHR", "BMY", 
+                         "AMGN", "GILD", "CVS", "CI", "ISRG", "REGN", "VRTX", "SYK", "BSX", 
+                         "MDT", "ELV", "BIIB", "MRNA", "ZTS", "HCA", "IDXX", "IQV", "A", "BAX", 
+                         "BDX", "4502.T", "4503.T", "4568.T", "4507.T", "4523.T", "4519.T"}
+    
+    # エネルギー
+    energy_tickers = {"XOM", "CVX", "COP", "SLB", "EOG", "MPC", "PSX", "VLO", "OXY", "HAL", 
+                     "BKR", "KMI", "WMB", "OKE", "LNG", "FANG", "DVN", "HES", "MRO", "APA", 
+                     "5020.T", "5401.T", "5411.T"}
+    
+    # 消費財
+    consumer_tickers = {"WMT", "HD", "COST", "MCD", "NKE", "SBUX", "TGT", "LOW", "TJX", "BKNG", 
+                       "ABNB", "MAR", "HLT", "YUM", "CMG", "ROST", "DG", "DLTR", "BBY", "EBAY", 
+                       "ETSY", "W", "CHWY", "LULU", "DECK", "ULTA", "EL", "CL", "PG", "KO", 
+                       "PEP", "MDLZ", "KHC", "GIS", "K", "HSY", "3382.T", "8267.T", "9983.T", 
+                       "9843.T", "2502.T", "2503.T", "2914.T"}
+    
+    # 自動車・輸送
+    auto_tickers = {"TSLA", "7203.T", "7267.T", "7201.T", "7269.T", "7270.T", "7261.T", "7211.T", 
+                   "5108.T", "7259.T", "6902.T", "BA", "LUV", "DAL", "UAL", "AAL", "ALK", 
+                   "9020.T", "9021.T", "9022.T", "9062.T", "9064.T", "9202.T", "9201.T"}
+    
+    # 通信・メディア
+    comm_tickers = {"NFLX", "DIS", "CMCSA", "T", "VZ", "TMUS", "CHTR", "EA", "TTWO", "RBLX", 
+                   "U", "SPOT", "PINS", "SNAP", "MTCH", "WBD", "9984.T", "9432.T", "9433.T", 
+                   "9434.T", "4755.T", "4689.T", "7974.T"}
+    
+    # 産業
+    industrial_tickers = {"GE", "CAT", "HON", "UPS", "RTX", "LMT", "DE", "MMM", "GD", "NOC", 
+                         "EMR", "ETN", "ITW", "PH", "CMI", "PCAR", "ROK", "FDX", "NSC", "UNP", 
+                         "CSX", "1801.T", "1802.T", "1803.T", "1812.T"}
+    
+    # 不動産
+    reit_tickers = {"AMT", "PLD", "CCI", "EQIX", "PSA", "WELL", "DLR", "O", "SBAC", "AVB", 
+                   "EQR", "VTR", "SPG", "ARE", "8801.T", "8802.T", "8830.T", "1928.T", "1925.T"}
+    
+    # 素材・化学
+    materials_tickers = {"LIN", "APD", "SHW", "ECL", "DD", "DOW", "NEM", "FCX", "NUE", "STLD", 
+                        "VMC", "MLM", "4063.T", "4005.T", "4183.T", "4188.T", "4452.T", "3401.T"}
+    
+    # セクター判定
+    if ticker in tech_tickers:
+        return "テクノロジー"
+    elif ticker in finance_tickers:
+        return "金融"
+    elif ticker in healthcare_tickers:
+        return "ヘルスケア"
+    elif ticker in energy_tickers:
+        return "エネルギー"
+    elif ticker in consumer_tickers:
+        return "消費財・小売"
+    elif ticker in auto_tickers:
+        return "自動車・輸送"
+    elif ticker in comm_tickers:
+        return "通信・メディア"
+    elif ticker in industrial_tickers:
+        return "産業・製造"
+    elif ticker in reit_tickers:
+        return "不動産"
+    elif ticker in materials_tickers:
+        return "素材・化学"
+    else:
+        return "その他"
+
+
+def scan_trending_stocks(num_stocks: int = 100) -> pd.DataFrame:
+    """
+    TICKER_CATALOGから注目株をスキャン（直近3日間の値動き）
+    
+    Args:
+        num_stocks: スキャンする銘柄数
+    
+    Returns:
+        トレンド銘柄のDataFrame
+    """
+    results = []
+    
+    # TICKER_CATALOGからランダムにサンプリング（計算時間短縮のため）
+    all_tickers = list(TICKER_CATALOG.keys())
+    
+    # ETFを除外（個別株のみ）
+    non_etf_tickers = [t for t in all_tickers if not any(
+        etf in t for etf in ["SPY", "VOO", "QQQ", "VTI", "DIA", "IWM", "VTV", "VUG", 
+                             "VIG", "SCHD", "VYM", "XL", "ARK", "VGT", "VDE", "VFH", 
+                             "VHT", "VNQ", "SOXX", "SMH", "IBB", "XBI", "FINX", "HACK", 
+                             "BOTZ", "LIT", "TAN", "ICLN", "JETS", "XRT", "ITB", "GDX", 
+                             "SLV", "GLD", "USO", "UNG", "TLT", "AGG", "BND", "LQD", 
+                             "HYG", "EMB", "VEA", "VWO", "IEMG", "EFA", "EEM", "FXI", 
+                             "EWJ", "EWZ", "EWG", "EWU"]
+    )]
+    
+    # サンプリング
+    import random
+    random.seed(42)
+    sample_tickers = random.sample(non_etf_tickers, min(num_stocks, len(non_etf_tickers)))
+    
+    for ticker in sample_tickers:
+        try:
+            # 過去5日分のデータを取得（3日間の変動を計算）
+            hist = fetch_stock_data(ticker, period="5d")
+            
+            if hist.empty or len(hist) < 4:
+                continue
+            
+            # 3日前と現在の価格
+            price_3d_ago = float(hist["Close"].iloc[0])
+            current_price = float(hist["Close"].iloc[-1])
+            
+            if price_3d_ago == 0:
+                continue
+            
+            # 3日間のリターン
+            return_3d = (current_price - price_3d_ago) / price_3d_ago * 100
+            
+            # ボラティリティ（標準偏差）
+            returns = hist["Close"].pct_change().dropna()
+            volatility = returns.std() * 100 if len(returns) > 0 else 0
+            
+            # 出来高の変化（直近vs平均）
+            volume_avg = hist["Volume"].mean()
+            volume_recent = hist["Volume"].iloc[-1]
+            volume_ratio = (volume_recent / volume_avg) if volume_avg > 0 else 0
+            
+            # セクター判定
+            sector = get_sector_for_ticker(ticker)
+            
+            # 銘柄名
+            name = TICKER_CATALOG.get(ticker, ticker)
+            
+            results.append({
+                "ticker": ticker,
+                "name": name,
+                "sector": sector,
+                "return_3d": return_3d,
+                "volatility": volatility,
+                "current_price": current_price,
+                "volume_ratio": volume_ratio,
+            })
+            
+        except Exception:
+            continue
+    
+    if not results:
+        return pd.DataFrame()
+    
+    df = pd.DataFrame(results)
+    
+    # 絶対リターンでソート（上昇・下落両方を含む）
+    df["abs_return"] = df["return_3d"].abs()
+    df = df.sort_values("abs_return", ascending=False)
+    
+    return df
+
+
+def create_trending_stocks_chart(df: pd.DataFrame, sector: str = None, 
+                                 top_n: int = 20) -> go.Figure:
+    """
+    注目株のチャート作成
+    
+    Args:
+        df: scan_trending_stocks() の戻り値
+        sector: フィルターするセクター（Noneの場合は全セクター）
+        top_n: 表示する銘柄数
+    
+    Returns:
+        Plotly Figure
+    """
+    if df.empty:
+        fig = go.Figure()
+        fig.add_annotation(
+            text="データが見つかりませんでした",
+            xref="paper",
+            yref="paper",
+            x=0.5,
+            y=0.5,
+            showarrow=False,
+            font=dict(size=16, color="#8B95A5"),
+        )
+        fig.update_layout(**base_layout())
+        return fig
+    
+    # セクターでフィルター
+    if sector:
+        df = df[df["sector"] == sector].copy()
+    
+    # 上位N件
+    df = df.head(top_n).copy()
+    
+    # 色分け（上昇=緑、下落=赤）
+    colors = ["#00D4AA" if r > 0 else "#FF4B6E" for r in df["return_3d"]]
+    
+    fig = go.Figure()
+    
+    fig.add_trace(
+        go.Bar(
+            x=df["return_3d"],
+            y=df["ticker"],
+            orientation="h",
+            marker=dict(
+                color=colors,
+                line=dict(color="#1A1F2E", width=1),
+            ),
+            text=[f"{r:+.2f}%" for r in df["return_3d"]],
+            textposition="outside",
+            hovertemplate=(
+                "<b>%{y}</b><br>"
+                "3日間リターン: %{x:.2f}%<br>"
+                "<extra></extra>"
+            ),
+        )
+    )
+    
+    fig.update_layout(**base_layout(
+        xaxis_title="3日間リターン (%)",
+        yaxis_title="",
+        height=max(400, top_n * 25),
+        yaxis=dict(
+            autorange="reversed",
+            gridcolor="#2A3040",
+        ),
+        xaxis=dict(
+            gridcolor="#2A3040",
+            zeroline=True,
+            zerolinecolor="#8B95A5",
+            zerolinewidth=2,
+        ),
+    ))
+    
+    return fig
+
+
+# ============================================================
 # 9. KPIカード HTML & ニュースカード HTML
 # ============================================================
 
@@ -2502,9 +2756,9 @@ def render_main():
             f"{sharpe:.2f}",
         ), unsafe_allow_html=True)
 
-    # ─── タブ（6つに拡張：配当タブを追加） ───
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
-        ["📋 概要", "📈 チャート", "🔬 分析", "🏢 個別銘柄", "🔮 シミュレーション", "💰 配当"]
+    # ─── タブ（7つに拡張：注目の株タブを追加） ───
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(
+        ["📋 概要", "📈 チャート", "🔬 分析", "🏢 個別銘柄", "🔮 シミュレーション", "💰 配当", "🔥 注目の株"]
     )
 
     # ── タブ1: 概要 ──
@@ -3137,6 +3391,161 @@ def render_main():
             st.info(
                 "配当データが見つかりませんでした。保有銘柄に配当支払い実績がない可能性があります。"
             )
+
+    # ============================================================
+    # ★新機能★ タブ7: 注目の株（トレンドスキャン）
+    # ============================================================
+    with tab7:
+        st.markdown(
+            '<div class="section-header">🔥 注目の株 - 直近3日間の値動きランキング</div>',
+            unsafe_allow_html=True,
+        )
+        st.caption(
+            "主要銘柄の中から、直近3日間で大きく値動きしている注目株を業界別にスキャンします。"
+            "上昇・下落の両方を含む「話題の銘柄」を発見できます。"
+        )
+        
+        # スキャン実行ボタン
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            st.info("💡 「スキャン開始」ボタンをクリックして、最新の注目株を取得してください。")
+        with col2:
+            scan_button = st.button("🔍 スキャン開始", use_container_width=True, type="primary")
+        
+        if scan_button or "trending_stocks_data" in st.session_state:
+            if scan_button:
+                with st.spinner("主要銘柄をスキャン中...（100銘柄を分析します）"):
+                    trending_df = scan_trending_stocks(num_stocks=100)
+                    st.session_state["trending_stocks_data"] = trending_df
+                    st.session_state["trending_scan_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
+            trending_df = st.session_state.get("trending_stocks_data", pd.DataFrame())
+            scan_time = st.session_state.get("trending_scan_time", "")
+            
+            if not trending_df.empty:
+                st.success(f"✅ スキャン完了！ {len(trending_df)}銘柄のデータを取得しました（{scan_time}）")
+                
+                # セクター別フィルター
+                st.markdown("##### 業界別フィルター")
+                sectors = ["全業界"] + sorted(trending_df["sector"].unique().tolist())
+                selected_sector = st.selectbox(
+                    "業界を選択",
+                    sectors,
+                    key="trending_sector_filter",
+                )
+                
+                # 表示件数
+                col1, col2 = st.columns(2)
+                with col1:
+                    show_count = st.slider(
+                        "表示件数",
+                        min_value=5,
+                        max_value=50,
+                        value=20,
+                        step=5,
+                        key="trending_show_count",
+                    )
+                
+                with col2:
+                    sort_option = st.radio(
+                        "ソート順",
+                        ["上昇率順", "下落率順", "値動き大きい順"],
+                        horizontal=True,
+                        key="trending_sort_option",
+                    )
+                
+                # データのフィルタリングとソート
+                filtered_df = trending_df.copy()
+                
+                if selected_sector != "全業界":
+                    filtered_df = filtered_df[filtered_df["sector"] == selected_sector]
+                
+                if sort_option == "上昇率順":
+                    filtered_df = filtered_df.sort_values("return_3d", ascending=False)
+                elif sort_option == "下落率順":
+                    filtered_df = filtered_df.sort_values("return_3d", ascending=True)
+                else:  # 値動き大きい順
+                    filtered_df = filtered_df.sort_values("abs_return", ascending=False)
+                
+                filtered_df = filtered_df.head(show_count)
+                
+                # チャート表示
+                st.markdown("##### ランキングチャート")
+                st.plotly_chart(
+                    create_trending_stocks_chart(
+                        filtered_df,
+                        sector=None,
+                        top_n=show_count,
+                    ),
+                    use_container_width=True,
+                )
+                
+                # トップ3をKPIカード表示
+                st.markdown("##### 注目トップ3")
+                
+                if len(filtered_df) >= 3:
+                    top3 = filtered_df.head(3)
+                    col1, col2, col3 = st.columns(3)
+                    
+                    for idx, (col, rank) in enumerate(zip([col1, col2, col3], [1, 2, 3])):
+                        if idx < len(top3):
+                            row = top3.iloc[idx]
+                            is_loss = row["return_3d"] < 0
+                            
+                            with col:
+                                st.markdown(
+                                    kpi_card(
+                                        f"#{rank} {row['ticker']}",
+                                        row["name"],
+                                        f"3日間: {row['return_3d']:+.2f}%",
+                                        is_loss=is_loss,
+                                    ),
+                                    unsafe_allow_html=True,
+                                )
+                
+                # 詳細テーブル
+                st.markdown("##### 詳細データ")
+                
+                display_df = filtered_df[[
+                    "ticker", "name", "sector", "return_3d", "current_price", 
+                    "volatility", "volume_ratio"
+                ]].copy()
+                
+                display_df.columns = [
+                    "ティッカー", "銘柄名", "業界", "3日間リターン(%)", 
+                    "現在価格", "ボラティリティ(%)", "出来高比率"
+                ]
+                
+                # フォーマット
+                display_df["3日間リターン(%)"] = display_df["3日間リターン(%)"].apply(
+                    lambda x: f"{x:+.2f}%"
+                )
+                display_df["現在価格"] = display_df["現在価格"].apply(
+                    lambda x: f"{x:,.2f}"
+                )
+                display_df["ボラティリティ(%)"] = display_df["ボラティリティ(%)"].apply(
+                    lambda x: f"{x:.2f}%"
+                )
+                display_df["出来高比率"] = display_df["出来高比率"].apply(
+                    lambda x: f"{x:.2f}x"
+                )
+                
+                st.dataframe(display_df, use_container_width=True, hide_index=True)
+                
+                # 業界別サマリー
+                st.markdown("##### 業界別サマリー")
+                
+                sector_summary = trending_df.groupby("sector").agg({
+                    "return_3d": ["mean", "max", "min", "count"]
+                }).round(2)
+                
+                sector_summary.columns = ["平均リターン(%)", "最高リターン(%)", "最低リターン(%)", "銘柄数"]
+                sector_summary = sector_summary.sort_values("平均リターン(%)", ascending=False)
+                
+                st.dataframe(sector_summary, use_container_width=True)
+                
+            else:
+                st.warning("データの取得に失敗しました。もう一度スキャンしてください。")
 
 
 # ============================================================
