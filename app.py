@@ -11,12 +11,14 @@ import plotly.express as px
 import pandas as pd
 import numpy as np
 from scipy import stats
+from scipy.optimize import minimize
 from datetime import datetime, timedelta
 import json
 import base64
 import urllib.parse
 import io
 import time
+from typing import Dict, List, Tuple, Optional
 
 # ============================================================
 # 1. ページ設定 & 定数
@@ -370,6 +372,21 @@ def fetch_stock_news(ticker: str) -> list:
     except Exception:
         pass
     return []
+
+
+@st.cache_data(ttl=3600)
+def fetch_dividend_history(ticker: str) -> pd.DataFrame:
+    """配当履歴を取得"""
+    try:
+        stock = yf.Ticker(ticker)
+        dividends = stock.dividends
+        if not dividends.empty:
+            df = dividends.to_frame(name="Dividend")
+            df.index.name = "Date"
+            return df
+    except Exception:
+        pass
+    return pd.DataFrame()
 
 
 # ============================================================
@@ -1004,6 +1021,712 @@ def import_csv(csv_text: str) -> list:
 
 
 # ============================================================
+# 8.5 ★新機能★ 効率的フロンティア関連の関数
+# ============================================================
+
+def calculate_portfolio_performance(weights: np.ndarray, mean_returns: np.ndarray,
+                                   cov_matrix: np.ndarray) -> Tuple[float, float]:
+    """
+    ポートフォリオのリターンとボラティリティを計算
+    
+    Args:
+        weights: 各銘柄の投資比率
+        mean_returns: 各銘柄の平均リターン（年率）
+        cov_matrix: 共分散行列（年率）
+    
+    Returns:
+        (リターン, ボラティリティ) のタプル
+    """
+    portfolio_return = np.sum(weights * mean_returns)
+    portfolio_volatility = np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights)))
+    return portfolio_return, portfolio_volatility
+
+
+def negative_sharpe_ratio(weights: np.ndarray, mean_returns: np.ndarray,
+                          cov_matrix: np.ndarray, risk_free_rate: float) -> float:
+    """
+    シャープレシオの負値を返す（最小化のため）
+    
+    Args:
+        weights: 各銘柄の投資比率
+        mean_returns: 各銘柄の平均リターン（年率）
+        cov_matrix: 共分散行列（年率）
+        risk_free_rate: 無リスク金利
+    
+    Returns:
+        -シャープレシオ
+    """
+    p_return, p_volatility = calculate_portfolio_performance(weights, mean_returns, cov_matrix)
+    sharpe = (p_return - risk_free_rate) / p_volatility if p_volatility > 0 else 0
+    return -sharpe
+
+
+def portfolio_variance(weights: np.ndarray, cov_matrix: np.ndarray) -> float:
+    """ポートフォリオの分散を計算"""
+    return np.dot(weights.T, np.dot(cov_matrix, weights))
+
+
+def generate_efficient_frontier_data(portfolio: list, period: str = "1y",
+                                    n_portfolios: int = 5000) -> Optional[Dict]:
+    """
+    効率的フロンティアのデータを生成
+    
+    Args:
+        portfolio: ポートフォリオリスト
+        period: データ取得期間
+        n_portfolios: ランダムポートフォリオの数
+    
+    Returns:
+        効率的フロンティアのデータ辞書 or None
+    """
+    if len(portfolio) < 2:
+        return None
+    
+    # 各銘柄の過去データを取得
+    tickers = [item["ticker"] for item in portfolio]
+    price_data = []
+    
+    for ticker in tickers:
+        data = fetch_stock_data(ticker, period=period)
+        if not data.empty:
+            price_data.append(data[["Close"]].rename(columns={"Close": ticker}))
+    
+    if len(price_data) < 2:
+        return None
+    
+    # 価格データを結合
+    prices = pd.concat(price_data, axis=1).dropna()
+    
+    if prices.empty or len(prices) < 20:
+        return None
+    
+    # リターンを計算
+    returns = prices.pct_change().dropna()
+    
+    # 年率換算の平均リターンと共分散行列
+    mean_returns = returns.mean() * TRADING_DAYS
+    cov_matrix = returns.cov() * TRADING_DAYS
+    
+    num_assets = len(tickers)
+    
+    # 現在のポートフォリオの配分を計算
+    exchange_rate = get_exchange_rate()
+    current_weights = []
+    total_value = 0.0
+    
+    for item in portfolio:
+        ticker = item["ticker"]
+        info = fetch_stock_info(ticker)
+        current_price = info["current_price"]
+        if current_price == 0:
+            hist = fetch_stock_data(ticker, period="5d")
+            if not hist.empty:
+                current_price = float(hist["Close"].iloc[-1])
+        
+        is_jpy = ".T" in ticker or ".JP" in ticker
+        value = current_price * item["shares"]
+        if not is_jpy:
+            value *= exchange_rate
+        
+        total_value += value
+    
+    for item in portfolio:
+        ticker = item["ticker"]
+        info = fetch_stock_info(ticker)
+        current_price = info["current_price"]
+        if current_price == 0:
+            hist = fetch_stock_data(ticker, period="5d")
+            if not hist.empty:
+                current_price = float(hist["Close"].iloc[-1])
+        
+        is_jpy = ".T" in ticker or ".JP" in ticker
+        value = current_price * item["shares"]
+        if not is_jpy:
+            value *= exchange_rate
+        
+        weight = value / total_value if total_value > 0 else 0
+        current_weights.append(weight)
+    
+    current_weights = np.array(current_weights)
+    
+    # ランダムポートフォリオを生成
+    np.random.seed(42)
+    portfolio_returns = []
+    portfolio_volatilities = []
+    portfolio_weights_list = []
+    
+    for _ in range(n_portfolios):
+        # ランダムな重み（合計1）
+        weights = np.random.random(num_assets)
+        weights /= np.sum(weights)
+        
+        p_return, p_volatility = calculate_portfolio_performance(
+            weights, mean_returns.values, cov_matrix.values
+        )
+        
+        portfolio_returns.append(p_return)
+        portfolio_volatilities.append(p_volatility)
+        portfolio_weights_list.append(weights)
+    
+    # 最小分散ポートフォリオを計算
+    constraints = {"type": "eq", "fun": lambda x: np.sum(x) - 1}
+    bounds = tuple((0, 1) for _ in range(num_assets))
+    initial_guess = num_assets * [1.0 / num_assets]
+    
+    min_var_result = minimize(
+        portfolio_variance,
+        initial_guess,
+        args=(cov_matrix.values,),
+        method="SLSQP",
+        bounds=bounds,
+        constraints=constraints,
+    )
+    
+    min_var_weights = min_var_result.x
+    min_var_return, min_var_volatility = calculate_portfolio_performance(
+        min_var_weights, mean_returns.values, cov_matrix.values
+    )
+    
+    # 最大シャープレシオ・ポートフォリオを計算
+    max_sharpe_result = minimize(
+        negative_sharpe_ratio,
+        initial_guess,
+        args=(mean_returns.values, cov_matrix.values, RISK_FREE_RATE),
+        method="SLSQP",
+        bounds=bounds,
+        constraints=constraints,
+    )
+    
+    max_sharpe_weights = max_sharpe_result.x
+    max_sharpe_return, max_sharpe_volatility = calculate_portfolio_performance(
+        max_sharpe_weights, mean_returns.values, cov_matrix.values
+    )
+    
+    # 現在のポートフォリオのパフォーマンス
+    current_return, current_volatility = calculate_portfolio_performance(
+        current_weights, mean_returns.values, cov_matrix.values
+    )
+    
+    return {
+        "tickers": tickers,
+        "random_portfolios": {
+            "returns": portfolio_returns,
+            "volatilities": portfolio_volatilities,
+            "weights": portfolio_weights_list,
+        },
+        "current_portfolio": {
+            "weights": current_weights,
+            "return": current_return,
+            "volatility": current_volatility,
+        },
+        "min_variance": {
+            "weights": min_var_weights,
+            "return": min_var_return,
+            "volatility": min_var_volatility,
+        },
+        "max_sharpe": {
+            "weights": max_sharpe_weights,
+            "return": max_sharpe_return,
+            "volatility": max_sharpe_volatility,
+        },
+    }
+
+
+def create_efficient_frontier_chart(frontier_data: Dict) -> go.Figure:
+    """
+    効率的フロンティアのチャート作成
+    
+    Args:
+        frontier_data: generate_efficient_frontier_data() の戻り値
+    
+    Returns:
+        Plotly Figure
+    """
+    fig = go.Figure()
+    
+    # ランダムポートフォリオの散布図
+    random = frontier_data["random_portfolios"]
+    returns = np.array(random["returns"]) * 100
+    volatilities = np.array(random["volatilities"]) * 100
+    
+    # シャープレシオでカラーマップ
+    sharpe_ratios = (returns / 100 - RISK_FREE_RATE) / (volatilities / 100)
+    
+    fig.add_trace(
+        go.Scatter(
+            x=volatilities,
+            y=returns,
+            mode="markers",
+            marker=dict(
+                size=4,
+                color=sharpe_ratios,
+                colorscale="Viridis",
+                showscale=True,
+                colorbar=dict(
+                    title="Sharpe<br>Ratio",
+                    titleside="right",
+                    tickmode="linear",
+                    tick0=0,
+                    dtick=0.5,
+                ),
+                line=dict(width=0),
+            ),
+            name="ランダムポートフォリオ",
+            hovertemplate="リスク: %{x:.2f}%<br>リターン: %{y:.2f}%<extra></extra>",
+        )
+    )
+    
+    # 現在のポートフォリオ
+    current = frontier_data["current_portfolio"]
+    fig.add_trace(
+        go.Scatter(
+            x=[current["volatility"] * 100],
+            y=[current["return"] * 100],
+            mode="markers",
+            marker=dict(
+                size=20,
+                color="#F59E0B",
+                symbol="star",
+                line=dict(color="#1A1F2E", width=2),
+            ),
+            name="現在のポートフォリオ",
+            hovertemplate="リスク: %{x:.2f}%<br>リターン: %{y:.2f}%<extra></extra>",
+        )
+    )
+    
+    # 最小分散ポートフォリオ
+    min_var = frontier_data["min_variance"]
+    fig.add_trace(
+        go.Scatter(
+            x=[min_var["volatility"] * 100],
+            y=[min_var["return"] * 100],
+            mode="markers",
+            marker=dict(
+                size=18,
+                color="#3B82F6",
+                symbol="diamond",
+                line=dict(color="#1A1F2E", width=2),
+            ),
+            name="最小分散ポートフォリオ",
+            hovertemplate="リスク: %{x:.2f}%<br>リターン: %{y:.2f}%<extra></extra>",
+        )
+    )
+    
+    # 最大シャープレシオ・ポートフォリオ
+    max_sharpe = frontier_data["max_sharpe"]
+    fig.add_trace(
+        go.Scatter(
+            x=[max_sharpe["volatility"] * 100],
+            y=[max_sharpe["return"] * 100],
+            mode="markers",
+            marker=dict(
+                size=18,
+                color="#00D4AA",
+                symbol="star-triangle-up",
+                line=dict(color="#1A1F2E", width=2),
+            ),
+            name="最大シャープレシオ",
+            hovertemplate="リスク: %{x:.2f}%<br>リターン: %{y:.2f}%<extra></extra>",
+        )
+    )
+    
+    fig.update_layout(**base_layout(
+        xaxis_title="リスク（年率ボラティリティ %）",
+        yaxis_title="リターン（年率 %）",
+        hovermode="closest",
+        height=520,
+        legend=dict(
+            orientation="v",
+            yanchor="top",
+            y=0.98,
+            xanchor="left",
+            x=0.02,
+            bgcolor="rgba(26, 31, 46, 0.8)",
+            bordercolor="#2A3040",
+            borderwidth=1,
+        ),
+    ))
+    
+    return fig
+
+
+# ============================================================
+# 8.6 ★新機能★ リバランス関連の関数
+# ============================================================
+
+def calculate_rebalance_actions(portfolio: list, target_allocations: Dict[str, float],
+                               exchange_rate: float) -> pd.DataFrame:
+    """
+    リバランスのための売買アクションを計算
+    
+    Args:
+        portfolio: 現在のポートフォリオ
+        target_allocations: 目標配分（銘柄: %）
+        exchange_rate: 為替レート
+    
+    Returns:
+        売買アクション一覧のDataFrame
+    """
+    # 現在の総資産価値を計算
+    total_value = 0.0
+    current_values = {}
+    
+    for item in portfolio:
+        ticker = item["ticker"]
+        info = fetch_stock_info(ticker)
+        current_price = info["current_price"]
+        if current_price == 0:
+            hist = fetch_stock_data(ticker, period="5d")
+            if not hist.empty:
+                current_price = float(hist["Close"].iloc[-1])
+        
+        is_jpy = ".T" in ticker or ".JP" in ticker
+        value = current_price * item["shares"]
+        if not is_jpy:
+            value *= exchange_rate
+        
+        current_values[ticker] = value
+        total_value += value
+    
+    # リバランスアクションを計算
+    actions = []
+    
+    for ticker, current_value in current_values.items():
+        current_pct = (current_value / total_value * 100) if total_value > 0 else 0
+        target_pct = target_allocations.get(ticker, 0)
+        
+        target_value = total_value * (target_pct / 100)
+        diff_value = target_value - current_value
+        diff_pct = target_pct - current_pct
+        
+        # 銘柄情報を取得
+        item = next((x for x in portfolio if x["ticker"] == ticker), None)
+        info = fetch_stock_info(ticker)
+        current_price = info["current_price"]
+        if current_price == 0:
+            hist = fetch_stock_data(ticker, period="5d")
+            if not hist.empty:
+                current_price = float(hist["Close"].iloc[-1])
+        
+        if abs(diff_value) > 100:  # 100円以上の差がある場合のみ表示
+            action = "買い増し" if diff_value > 0 else "売却"
+            actions.append({
+                "銘柄": ticker,
+                "現在配分": f"{current_pct:.2f}%",
+                "目標配分": f"{target_pct:.2f}%",
+                "差分": f"{diff_pct:+.2f}%",
+                "アクション": action,
+                "金額": f"¥{abs(diff_value):,.0f}",
+                "株数": f"{int(abs(diff_value) / current_price) if current_price > 0 else 0}株",
+            })
+    
+    return pd.DataFrame(actions)
+
+
+def create_rebalance_comparison_chart(portfolio: list, target_allocations: Dict[str, float],
+                                     exchange_rate: float) -> go.Figure:
+    """
+    現在配分 vs 目標配分の比較チャート
+    
+    Args:
+        portfolio: ポートフォリオリスト
+        target_allocations: 目標配分
+        exchange_rate: 為替レート
+    
+    Returns:
+        Plotly Figure
+    """
+    # 現在配分を計算
+    total_value = 0.0
+    current_allocations = {}
+    
+    for item in portfolio:
+        ticker = item["ticker"]
+        info = fetch_stock_info(ticker)
+        current_price = info["current_price"]
+        if current_price == 0:
+            hist = fetch_stock_data(ticker, period="5d")
+            if not hist.empty:
+                current_price = float(hist["Close"].iloc[-1])
+        
+        is_jpy = ".T" in ticker or ".JP" in ticker
+        value = current_price * item["shares"]
+        if not is_jpy:
+            value *= exchange_rate
+        
+        current_allocations[ticker] = value
+        total_value += value
+    
+    # パーセントに変換
+    tickers = list(current_allocations.keys())
+    current_pcts = [current_allocations[t] / total_value * 100 if total_value > 0 else 0
+                   for t in tickers]
+    target_pcts = [target_allocations.get(t, 0) for t in tickers]
+    
+    fig = go.Figure()
+    
+    fig.add_trace(
+        go.Bar(
+            name="現在の配分",
+            x=tickers,
+            y=current_pcts,
+            marker=dict(color="#3B82F6", line=dict(color="#1A1F2E", width=1)),
+            text=[f"{v:.1f}%" for v in current_pcts],
+            textposition="outside",
+        )
+    )
+    
+    fig.add_trace(
+        go.Bar(
+            name="目標配分",
+            x=tickers,
+            y=target_pcts,
+            marker=dict(color="#00D4AA", line=dict(color="#1A1F2E", width=1)),
+            text=[f"{v:.1f}%" for v in target_pcts],
+            textposition="outside",
+        )
+    )
+    
+    fig.update_layout(**base_layout(
+        barmode="group",
+        xaxis_title="銘柄",
+        yaxis_title="配分比率 (%)",
+        height=400,
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1,
+        ),
+    ))
+    
+    return fig
+
+
+# ============================================================
+# 8.7 ★新機能★ 配当関連の関数
+# ============================================================
+
+def aggregate_dividend_by_month(portfolio: list) -> pd.DataFrame:
+    """
+    月別の配当収入を集計
+    
+    Args:
+        portfolio: ポートフォリオリスト
+    
+    Returns:
+        月別配当収入のDataFrame（銘柄別にカラム分け）
+    """
+    exchange_rate = get_exchange_rate()
+    all_dividends = {}
+    
+    for item in portfolio:
+        ticker = item["ticker"]
+        div_history = fetch_dividend_history(ticker)
+        
+        if not div_history.empty:
+            # 配当金額に保有株数を掛ける
+            div_history["Amount"] = div_history["Dividend"] * item["shares"]
+            
+            # 通貨変換
+            is_jpy = ".T" in ticker or ".JP" in ticker
+            if not is_jpy:
+                div_history["Amount"] *= exchange_rate
+            
+            # 月次に集計
+            div_history.index = pd.to_datetime(div_history.index)
+            monthly = div_history.resample("M")["Amount"].sum()
+            
+            all_dividends[ticker] = monthly
+    
+    if not all_dividends:
+        return pd.DataFrame()
+    
+    # 全銘柄の配当を結合
+    df = pd.DataFrame(all_dividends).fillna(0)
+    df.index = df.index.strftime("%Y-%m")
+    
+    return df
+
+
+def calculate_dividend_metrics(portfolio: list) -> pd.DataFrame:
+    """
+    各銘柄の配当指標を計算
+    
+    Args:
+        portfolio: ポートフォリオリスト
+    
+    Returns:
+        配当指標一覧のDataFrame
+    """
+    metrics_list = []
+    exchange_rate = get_exchange_rate()
+    
+    for item in portfolio:
+        ticker = item["ticker"]
+        
+        # 基本情報
+        info = fetch_stock_info(ticker)
+        current_price = info["current_price"]
+        if current_price == 0:
+            hist = fetch_stock_data(ticker, period="5d")
+            if not hist.empty:
+                current_price = float(hist["Close"].iloc[-1])
+        
+        # 配当履歴
+        div_history = fetch_dividend_history(ticker)
+        
+        if not div_history.empty:
+            # 年間配当金
+            one_year_ago = datetime.now() - timedelta(days=365)
+            recent_divs = div_history[div_history.index > one_year_ago]
+            annual_dividend = recent_divs["Dividend"].sum() if not recent_divs.empty else 0
+            
+            # 配当頻度（年間支払い回数）
+            frequency = len(recent_divs)
+            
+            # 配当利回り（現在価格ベース）
+            dividend_yield = (annual_dividend / current_price * 100) if current_price > 0 else 0
+            
+            # 増配傾向の分析（過去3年）
+            three_years_ago = datetime.now() - timedelta(days=3*365)
+            recent_divs_3y = div_history[div_history.index > three_years_ago]["Dividend"]
+            
+            if len(recent_divs_3y) >= 2:
+                trend = "増配" if recent_divs_3y.iloc[-1] > recent_divs_3y.iloc[0] else "減配"
+            else:
+                trend = "不明"
+            
+            # 年間受取額（保有株数ベース）
+            annual_income = annual_dividend * item["shares"]
+            is_jpy = ".T" in ticker or ".JP" in ticker
+            if not is_jpy:
+                annual_income *= exchange_rate
+            
+            metrics_list.append({
+                "銘柄": ticker,
+                "配当利回り": f"{dividend_yield:.2f}%",
+                "年間配当": f"¥{annual_income:,.0f}",
+                "支払頻度": f"年{frequency}回",
+                "傾向": trend,
+            })
+    
+    return pd.DataFrame(metrics_list)
+
+
+def create_dividend_calendar_chart(monthly_dividends: pd.DataFrame) -> go.Figure:
+    """
+    月別配当収入のスタック棒グラフ
+    
+    Args:
+        monthly_dividends: aggregate_dividend_by_month() の戻り値
+    
+    Returns:
+        Plotly Figure
+    """
+    fig = go.Figure()
+    
+    colors = ["#00D4AA", "#3B82F6", "#8B5CF6", "#F59E0B", "#FF4B6E",
+              "#06B6D4", "#EC4899", "#84CC16", "#F97316", "#6366F1"]
+    
+    for i, ticker in enumerate(monthly_dividends.columns):
+        fig.add_trace(
+            go.Bar(
+                name=ticker,
+                x=monthly_dividends.index,
+                y=monthly_dividends[ticker],
+                marker=dict(
+                    color=colors[i % len(colors)],
+                    line=dict(color="#1A1F2E", width=1),
+                ),
+                hovertemplate=f"<b>{ticker}</b><br>月: %{{x}}<br>配当: ¥%{{y:,.0f}}<extra></extra>",
+            )
+        )
+    
+    fig.update_layout(**base_layout(
+        barmode="stack",
+        xaxis_title="月",
+        yaxis_title="配当収入 (¥)",
+        height=400,
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1,
+        ),
+        xaxis=dict(
+            tickangle=-45,
+            gridcolor="#2A3040",
+        ),
+    ))
+    
+    return fig
+
+
+def create_annual_dividend_chart(monthly_dividends: pd.DataFrame) -> go.Figure:
+    """
+    年間配当収入の推移チャート
+    
+    Args:
+        monthly_dividends: aggregate_dividend_by_month() の戻り値
+    
+    Returns:
+        Plotly Figure
+    """
+    if monthly_dividends.empty:
+        fig = go.Figure()
+        fig.add_annotation(
+            text="配当データが不足しています",
+            xref="paper",
+            yref="paper",
+            x=0.5,
+            y=0.5,
+            showarrow=False,
+            font=dict(size=16, color="#8B95A5"),
+        )
+        fig.update_layout(**base_layout())
+        return fig
+    
+    # 年次に集計
+    monthly_dividends_copy = monthly_dividends.copy()
+    monthly_dividends_copy.index = pd.to_datetime(monthly_dividends_copy.index)
+    annual_total = monthly_dividends_copy.resample("Y").sum().sum(axis=1)
+    
+    years = annual_total.index.year
+    amounts = annual_total.values
+    
+    fig = go.Figure()
+    
+    fig.add_trace(
+        go.Scatter(
+            x=years,
+            y=amounts,
+            mode="lines+markers",
+            line=dict(color="#00D4AA", width=3),
+            marker=dict(size=10, color="#00D4AA", line=dict(color="#1A1F2E", width=2)),
+            fill="tozeroy",
+            fillcolor="rgba(0, 212, 170, 0.1)",
+            hovertemplate="年: %{x}<br>配当収入: ¥%{y:,.0f}<extra></extra>",
+        )
+    )
+    
+    fig.update_layout(**base_layout(
+        xaxis_title="年",
+        yaxis_title="年間配当収入 (¥)",
+        hovermode="x unified",
+        height=350,
+        xaxis=dict(
+            dtick=1,
+            gridcolor="#2A3040",
+        ),
+    ))
+    
+    return fig
+
+
+# ============================================================
 # 9. KPIカード HTML & ニュースカード HTML
 # ============================================================
 
@@ -1251,9 +1974,9 @@ def render_main():
             f"{sharpe:.2f}",
         ), unsafe_allow_html=True)
 
-    # ─── タブ（5つに拡張） ───
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(
-        ["📋 概要", "📈 チャート", "🔬 分析", "🏢 個別銘柄", "🔮 シミュレーション"]
+    # ─── タブ（6つに拡張：配当タブを追加） ───
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
+        ["📋 概要", "📈 チャート", "🔬 分析", "🏢 個別銘柄", "🔮 シミュレーション", "💰 配当"]
     )
 
     # ── タブ1: 概要 ──
@@ -1408,6 +2131,179 @@ def render_main():
                 ]
             })
             st.dataframe(stat_df, use_container_width=True, hide_index=True)
+            
+            st.markdown("---")
+
+            # ============================================================
+            # ★新機能★ リバランス分析
+            # ============================================================
+            st.markdown(
+                '<div class="section-header">🔄 リバランス分析</div>',
+                unsafe_allow_html=True,
+            )
+            st.caption(
+                "目標とする資産配分を設定して、現在のポートフォリオとの差分を確認できます。"
+            )
+
+            st.markdown("##### 目標配分の設定")
+            st.caption("各銘柄の目標配分（%）を入力してください（合計100%）")
+
+            target_allocations = {}
+            
+            # 3列レイアウトで目標配分を入力
+            num_tickers = len(portfolio)
+            cols_per_row = 3
+            num_rows = (num_tickers + cols_per_row - 1) // cols_per_row
+            
+            for row in range(num_rows):
+                cols = st.columns(cols_per_row)
+                for col_idx in range(cols_per_row):
+                    ticker_idx = row * cols_per_row + col_idx
+                    if ticker_idx < num_tickers:
+                        ticker = portfolio[ticker_idx]["ticker"]
+                        with cols[col_idx]:
+                            target_pct = st.number_input(
+                                f"{ticker}",
+                                min_value=0.0,
+                                max_value=100.0,
+                                value=100.0 / num_tickers,
+                                step=1.0,
+                                key=f"target_{ticker}",
+                                format="%.1f",
+                            )
+                            target_allocations[ticker] = target_pct
+
+            total_target = sum(target_allocations.values())
+            
+            if abs(total_target - 100.0) > 0.1:
+                st.warning(f"⚠️ 目標配分の合計が{total_target:.1f}%です。100%に調整してください。")
+            else:
+                st.success(f"✅ 目標配分の合計: {total_target:.1f}%")
+
+                # 比較チャート
+                st.markdown("##### 現在配分 vs 目標配分")
+                st.plotly_chart(
+                    create_rebalance_comparison_chart(
+                        portfolio, target_allocations, exchange_rate
+                    ),
+                    use_container_width=True,
+                )
+
+                # 売買アクション
+                st.markdown("##### 推奨売買アクション")
+                actions_df = calculate_rebalance_actions(
+                    portfolio, target_allocations, exchange_rate
+                )
+
+                if not actions_df.empty:
+                    st.dataframe(actions_df, use_container_width=True, hide_index=True)
+                else:
+                    st.info("リバランスの必要はありません（目標配分と現在配分が一致しています）")
+
+            st.markdown("---")
+
+            # ============================================================
+            # ★新機能★ 効率的フロンティア
+            # ============================================================
+            st.markdown(
+                '<div class="section-header">📊 効率的フロンティア（Modern Portfolio Theory）</div>',
+                unsafe_allow_html=True,
+            )
+            st.caption(
+                "リスク（ボラティリティ）とリターンの関係を可視化し、"
+                "最適なポートフォリオ配分を探索します。"
+            )
+
+            if len(portfolio) < 2:
+                st.info("効率的フロンティアの分析には2銘柄以上が必要です。")
+            else:
+                with st.spinner("効率的フロンティアを計算中..."):
+                    frontier_data = generate_efficient_frontier_data(
+                        portfolio, period="1y", n_portfolios=3000
+                    )
+
+                if frontier_data:
+                    # チャート表示
+                    st.plotly_chart(
+                        create_efficient_frontier_chart(frontier_data),
+                        use_container_width=True,
+                    )
+
+                    # 推奨配分の比較テーブル
+                    st.markdown("##### 最適ポートフォリオ配分の比較")
+
+                    tickers = frontier_data["tickers"]
+                    current_weights = frontier_data["current_portfolio"]["weights"]
+                    min_var_weights = frontier_data["min_variance"]["weights"]
+                    max_sharpe_weights = frontier_data["max_sharpe"]["weights"]
+
+                    comparison_df = pd.DataFrame(
+                        {
+                            "銘柄": tickers,
+                            "現在の配分": [f"{w*100:.1f}%" for w in current_weights],
+                            "最小分散": [f"{w*100:.1f}%" for w in min_var_weights],
+                            "最大シャープレシオ": [f"{w*100:.1f}%" for w in max_sharpe_weights],
+                        }
+                    )
+
+                    st.dataframe(comparison_df, use_container_width=True, hide_index=True)
+
+                    # パフォーマンスサマリー
+                    st.markdown("##### パフォーマンスサマリー")
+
+                    col1, col2, col3 = st.columns(3)
+
+                    with col1:
+                        st.markdown("**現在のポートフォリオ**")
+                        st.metric(
+                            "年率リターン",
+                            f"{frontier_data['current_portfolio']['return']*100:.2f}%",
+                        )
+                        st.metric(
+                            "年率リスク",
+                            f"{frontier_data['current_portfolio']['volatility']*100:.2f}%",
+                        )
+                        sharpe = (
+                            (frontier_data['current_portfolio']['return'] - RISK_FREE_RATE)
+                            / frontier_data['current_portfolio']['volatility']
+                        )
+                        st.metric("シャープレシオ", f"{sharpe:.3f}")
+
+                    with col2:
+                        st.markdown("**最小分散ポートフォリオ**")
+                        st.metric(
+                            "年率リターン",
+                            f"{frontier_data['min_variance']['return']*100:.2f}%",
+                        )
+                        st.metric(
+                            "年率リスク",
+                            f"{frontier_data['min_variance']['volatility']*100:.2f}%",
+                        )
+                        sharpe = (
+                            (frontier_data['min_variance']['return'] - RISK_FREE_RATE)
+                            / frontier_data['min_variance']['volatility']
+                        )
+                        st.metric("シャープレシオ", f"{sharpe:.3f}")
+
+                    with col3:
+                        st.markdown("**最大シャープレシオ**")
+                        st.metric(
+                            "年率リターン",
+                            f"{frontier_data['max_sharpe']['return']*100:.2f}%",
+                        )
+                        st.metric(
+                            "年率リスク",
+                            f"{frontier_data['max_sharpe']['volatility']*100:.2f}%",
+                        )
+                        sharpe = (
+                            (frontier_data['max_sharpe']['return'] - RISK_FREE_RATE)
+                            / frontier_data['max_sharpe']['volatility']
+                        )
+                        st.metric("シャープレシオ", f"{sharpe:.3f}")
+
+                else:
+                    st.info("効率的フロンティアの計算に必要なデータが不足しています。")
+                    
         else:
             st.info("分析に十分なデータがありません。")
 
@@ -1591,6 +2487,128 @@ def render_main():
 
                 else:
                     st.error("シミュレーションの実行に失敗しました。")
+
+    # ============================================================
+    # ★新機能★ タブ6: 配当分析
+    # ============================================================
+    with tab6:
+        st.markdown(
+            '<div class="section-header">💰 配当カレンダー & 配当追跡</div>',
+            unsafe_allow_html=True,
+        )
+        st.caption("保有銘柄からの配当収入を可視化し、配当戦略を最適化します。")
+
+        # 月別配当収入の集計
+        with st.spinner("配当データを取得中..."):
+            monthly_dividends = aggregate_dividend_by_month(portfolio)
+
+        if not monthly_dividends.empty:
+            # 月別配当カレンダー
+            st.markdown("##### 月別配当収入（過去実績）")
+            st.plotly_chart(
+                create_dividend_calendar_chart(monthly_dividends),
+                use_container_width=True,
+            )
+
+            # 年間配当推移
+            st.markdown("##### 年間配当収入の推移")
+            st.plotly_chart(
+                create_annual_dividend_chart(monthly_dividends),
+                use_container_width=True,
+            )
+
+            # 配当サマリーKPI
+            st.markdown("##### 配当サマリー")
+            
+            # 総配当収入を計算
+            total_dividends = monthly_dividends.sum().sum()
+            annual_average = total_dividends / max(1, len(monthly_dividends) / 12)
+            
+            # 最も配当が多かった月
+            monthly_totals = monthly_dividends.sum(axis=1)
+            if not monthly_totals.empty:
+                best_month = monthly_totals.idxmax()
+                best_month_amount = monthly_totals.max()
+            else:
+                best_month = "N/A"
+                best_month_amount = 0
+
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.markdown(
+                    kpi_card(
+                        "累積配当収入",
+                        format_jpy(total_dividends),
+                        "全期間合計",
+                    ),
+                    unsafe_allow_html=True,
+                )
+            
+            with col2:
+                st.markdown(
+                    kpi_card(
+                        "年間配当（推定）",
+                        format_jpy(annual_average),
+                        "平均値",
+                    ),
+                    unsafe_allow_html=True,
+                )
+            
+            with col3:
+                st.markdown(
+                    kpi_card(
+                        "最高月間配当",
+                        format_jpy(best_month_amount),
+                        f"{best_month}",
+                    ),
+                    unsafe_allow_html=True,
+                )
+
+            st.markdown("---")
+
+            # 配当指標テーブル
+            st.markdown("##### 銘柄別配当指標")
+            dividend_metrics = calculate_dividend_metrics(portfolio)
+            
+            if not dividend_metrics.empty:
+                st.dataframe(dividend_metrics, use_container_width=True, hide_index=True)
+
+                # 配当利回りランキング
+                st.markdown("##### 配当利回りランキング（保有銘柄内）")
+                
+                # 配当利回りでソート
+                ranking_df = dividend_metrics.copy()
+                ranking_df["配当利回り_数値"] = ranking_df["配当利回り"].str.replace("%", "").astype(float)
+                ranking_df = ranking_df.sort_values("配当利回り_数値", ascending=False)
+                ranking_df = ranking_df.drop(columns=["配当利回り_数値"])
+                
+                # 上位3銘柄をKPIカード形式で表示
+                if len(ranking_df) >= 3:
+                    col1, col2, col3 = st.columns(3)
+                    
+                    for idx, (col, rank) in enumerate(zip([col1, col2, col3], [1, 2, 3])):
+                        if idx < len(ranking_df):
+                            row = ranking_df.iloc[idx]
+                            with col:
+                                st.markdown(
+                                    kpi_card(
+                                        f"#{rank} {row['銘柄']}",
+                                        row["配当利回り"],
+                                        f"{row['年間配当']} / 年",
+                                    ),
+                                    unsafe_allow_html=True,
+                                )
+                elif len(ranking_df) > 0:
+                    st.dataframe(ranking_df, use_container_width=True, hide_index=True)
+
+            else:
+                st.info("配当データが見つかりませんでした。")
+
+        else:
+            st.info(
+                "配当データが見つかりませんでした。保有銘柄に配当支払い実績がない可能性があります。"
+            )
 
 
 # ============================================================
