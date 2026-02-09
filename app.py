@@ -123,10 +123,15 @@ html, body, [class*="css"] {
     font-family: 'Noto Sans JP', 'JetBrains Mono', sans-serif;
 }
 
-/* Hide Streamlit branding */
+/* Hide Streamlit branding but keep sidebar toggle */
 #MainMenu {visibility: hidden;}
 footer {visibility: hidden;}
-header {visibility: hidden;}
+header[data-testid="stHeader"] {
+    background: transparent;
+    backdrop-filter: none;
+}
+/* Hide deploy button only */
+.stDeployButton {display: none;}
 
 /* KPI Cards */
 .kpi-card {
