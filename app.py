@@ -49,6 +49,91 @@ st.markdown("""
         padding-top: 2rem;
     }
     
+    /* サイドバースタイリング */
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #f8f9fa 0%, #e9ecef 100%);
+        padding: 1rem;
+    }
+    
+    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h2 {
+        color: #1f2937;
+        font-size: 1.3rem;
+        font-weight: 700;
+        margin-bottom: 0.5rem;
+        padding-bottom: 0.5rem;
+        border-bottom: 2px solid #667eea;
+    }
+    
+    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h3 {
+        color: #374151;
+        font-size: 1.1rem;
+        font-weight: 600;
+        margin-top: 1.5rem;
+        margin-bottom: 0.8rem;
+    }
+    
+    /* サイドバーのexpander */
+    [data-testid="stSidebar"] .streamlit-expanderHeader {
+        background-color: white;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        font-weight: 600;
+        color: #1f2937;
+        padding: 0.75rem 1rem;
+    }
+    
+    [data-testid="stSidebar"] .streamlit-expanderHeader:hover {
+        background-color: #f3f4f6;
+        border-color: #667eea;
+    }
+    
+    /* サイドバーの入力フィールド */
+    [data-testid="stSidebar"] input {
+        border-radius: 6px;
+        border: 1px solid #d1d5db;
+    }
+    
+    [data-testid="stSidebar"] input:focus {
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+    
+    /* サイドバーのボタン */
+    [data-testid="stSidebar"] .stButton > button {
+        width: 100%;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        font-weight: 600;
+        border-radius: 8px;
+        border: none;
+        padding: 0.6rem 1rem;
+        transition: all 0.3s;
+        box-shadow: 0 2px 4px rgba(102, 126, 234, 0.2);
+    }
+    
+    [data-testid="stSidebar"] .stButton > button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    }
+    
+    /* サイドバーのスライダー */
+    [data-testid="stSidebar"] .stSlider {
+        padding: 0.5rem 0;
+    }
+    
+    /* サイドバーの情報ボックス */
+    [data-testid="stSidebar"] .element-container div[data-testid="stMarkdownContainer"] p {
+        font-size: 0.9rem;
+        line-height: 1.5;
+    }
+    
+    /* サイドバーの区切り線 */
+    [data-testid="stSidebar"] hr {
+        margin: 1.5rem 0;
+        border: none;
+        border-top: 2px solid #e5e7eb;
+    }
+    
     /* KPIカード */
     .kpi-card {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -109,12 +194,7 @@ st.markdown("""
         font-size: 1rem;
     }
     
-    /* サイドバースタイル */
-    [data-testid="stSidebar"] {
-        background-color: #f9fafb;
-    }
-    
-    /* ボタンスタイル */
+    /* ボタンスタイル（メインエリア） */
     .stButton > button {
         width: 100%;
         background-color: #667eea;
@@ -172,6 +252,21 @@ st.markdown("""
         background-color: #fffbeb;
         border-color: #f59e0b;
         color: #92400e;
+    }
+    
+    /* サイドバーの保有銘柄カード */
+    .holding-card {
+        background: white;
+        padding: 0.75rem;
+        border-radius: 8px;
+        margin-bottom: 0.5rem;
+        border: 1px solid #e5e7eb;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    }
+    
+    .holding-card:hover {
+        border-color: #667eea;
+        box-shadow: 0 2px 8px rgba(102, 126, 234, 0.15);
     }
 </style>
 """, unsafe_allow_html=True)
@@ -668,130 +763,178 @@ def main():
         st.session_state.portfolio = url_portfolio
         st.success("✅ URLからポートフォリオを読み込みました")
     
+    # ================================================================================
     # サイドバー: ポートフォリオ入力
+    # ================================================================================
+    
     with st.sidebar:
-        st.header("⚙️ ポートフォリオ設定")
+        st.markdown("## ⚙️ ポートフォリオ設定")
         
+        # ================================================================================
         # 銘柄追加セクション
-        st.subheader("📈 銘柄追加")
+        # ================================================================================
         
-        # ティッカー検索
-        search_query = st.text_input(
-            "ティッカー検索",
-            placeholder="例: AAPL, GOOGL, 7203.T",
-            help="銘柄名またはティッカーシンボルで検索"
-        )
+        st.markdown("### 📈 銘柄追加")
         
-        if search_query:
-            search_results = search_ticker(search_query)
-            if search_results:
-                selected = st.selectbox("検索結果から選択", search_results)
-                ticker_symbol = selected.split(" - ")[0] if selected else ""
+        with st.container():
+            # ティッカー検索
+            search_query = st.text_input(
+                "🔍 ティッカー検索",
+                placeholder="AAPL, GOOGL, 7203.T など",
+                help="銘柄名またはティッカーシンボルで検索",
+                key="ticker_search"
+            )
+            
+            if search_query:
+                search_results = search_ticker(search_query)
+                if search_results:
+                    selected = st.selectbox(
+                        "検索結果から選択",
+                        search_results,
+                        key="search_results"
+                    )
+                    ticker_symbol = selected.split(" - ")[0] if selected else ""
+                else:
+                    st.info("💡 該当する銘柄が見つかりませんでした")
+                    ticker_symbol = search_query
             else:
-                st.info("該当する銘柄が見つかりませんでした")
-                ticker_symbol = search_query
-        else:
-            ticker_symbol = st.text_input(
-                "ティッカーシンボル",
-                placeholder="例: AAPL",
-                help="Yahoo Financeのティッカーシンボルを入力"
-            )
+                ticker_symbol = st.text_input(
+                    "ティッカーシンボル",
+                    placeholder="AAPL",
+                    help="Yahoo Financeのティッカーシンボル",
+                    key="ticker_input"
+                )
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                shares = st.number_input(
+                    "株数",
+                    min_value=0.0,
+                    value=0.0,
+                    step=1.0,
+                    format="%.2f",
+                    key="shares_input"
+                )
+            with col2:
+                purchase_price = st.number_input(
+                    "取得単価 ($)",
+                    min_value=0.0,
+                    value=0.0,
+                    step=0.01,
+                    format="%.2f",
+                    key="price_input"
+                )
+            
+            if st.button("➕ 銘柄を追加", key="add_stock"):
+                if ticker_symbol and shares > 0 and purchase_price > 0:
+                    ticker_info = get_ticker_info(ticker_symbol)
+                    if ticker_info:
+                        st.session_state.portfolio.append({
+                            'ticker': ticker_symbol,
+                            'shares': shares,
+                            'purchase_price': purchase_price,
+                            'name': ticker_info['name']
+                        })
+                        st.success(f"✅ {ticker_symbol} を追加しました")
+                        st.rerun()
+                else:
+                    st.warning("⚠️ すべての項目を入力してください")
         
-        col1, col2 = st.columns(2)
-        with col1:
-            shares = st.number_input(
-                "株数",
-                min_value=0.0,
-                value=0.0,
-                step=1.0,
-                format="%.2f"
-            )
-        with col2:
-            purchase_price = st.number_input(
-                "取得単価",
-                min_value=0.0,
-                value=0.0,
-                step=0.01,
-                format="%.2f"
-            )
-        
-        if st.button("➕ 銘柄を追加", use_container_width=True):
-            if ticker_symbol and shares > 0 and purchase_price > 0:
-                ticker_info = get_ticker_info(ticker_symbol)
-                if ticker_info:
-                    st.session_state.portfolio.append({
-                        'ticker': ticker_symbol,
-                        'shares': shares,
-                        'purchase_price': purchase_price,
-                        'name': ticker_info['name']
-                    })
-                    st.success(f"✅ {ticker_symbol} を追加しました")
-                    st.rerun()
-            else:
-                st.warning("⚠️ すべての項目を入力してください")
-        
+        # ================================================================================
         # 保有銘柄リスト
+        # ================================================================================
+        
         if st.session_state.portfolio:
             st.markdown("---")
-            st.subheader("💼 保有銘柄")
+            st.markdown("### 💼 保有銘柄一覧")
+            
+            st.info(f"📊 **合計: {len(st.session_state.portfolio)} 銘柄**")
             
             for idx, holding in enumerate(st.session_state.portfolio):
-                with st.expander(f"{holding['ticker']} - {holding['shares']:.0f}株"):
-                    st.write(f"**銘柄名:** {holding['name']}")
-                    st.write(f"**株数:** {holding['shares']:.2f}")
-                    st.write(f"**取得単価:** ${holding['purchase_price']:.2f}")
+                with st.expander(f"**{holding['ticker']}** ({holding['shares']:.0f}株)", expanded=False):
+                    st.markdown(f"**📌 {holding['name']}**")
+                    st.markdown(f"**株数:** {holding['shares']:.2f}")
+                    st.markdown(f"**取得単価:** ${holding['purchase_price']:.2f}")
+                    st.markdown(f"**投資額:** ${holding['shares'] * holding['purchase_price']:.2f}")
                     
                     if st.button("🗑️ 削除", key=f"delete_{idx}"):
                         st.session_state.portfolio.pop(idx)
                         st.rerun()
             
-            # ポートフォリオクリア
-            st.markdown("---")
-            if st.button("🗑️ ポートフォリオをクリア", use_container_width=True):
-                st.session_state.portfolio = []
-                st.session_state.target_allocation = {}
-                st.rerun()
+            # ================================================================================
+            # ポートフォリオ管理ボタン
+            # ================================================================================
             
-            # URL共有
-            if st.button("🔗 共有URLを生成", use_container_width=True):
-                url = create_shareable_url(st.session_state.portfolio)
-                if url:
-                    st.code(url, language=None)
-                    st.info("💡 このURLを共有してポートフォリオを他の人と共有できます")
+            st.markdown("---")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                if st.button("🗑️ クリア", key="clear_portfolio"):
+                    st.session_state.portfolio = []
+                    st.session_state.target_allocation = {}
+                    st.rerun()
+            
+            with col2:
+                if st.button("🔗 URL共有", key="share_url"):
+                    url = create_shareable_url(st.session_state.portfolio)
+                    if url:
+                        st.code(url, language=None)
+                        st.info("💡 このURLでポートフォリオを共有できます")
         
+        # ================================================================================
         # リバランス設定
+        # ================================================================================
+        
         if st.session_state.portfolio:
             st.markdown("---")
-            st.subheader("⚖️ リバランス設定")
-            st.info("各銘柄の目標配分比率を設定してください（合計100%）")
+            st.markdown("### ⚖️ リバランス設定")
+            
+            st.info("💡 各銘柄の目標配分比率を設定（合計100%）")
             
             # 目標配分の入力
             total_target = 0
-            for holding in st.session_state.portfolio:
-                ticker = holding['ticker']
-                current_value = st.session_state.target_allocation.get(ticker, 0)
-                
-                target = st.slider(
-                    f"{ticker}",
-                    min_value=0,
-                    max_value=100,
-                    value=int(current_value),
-                    step=1,
-                    key=f"target_{ticker}"
-                )
-                st.session_state.target_allocation[ticker] = target
-                total_target += target
             
-            # バリデーション
+            with st.container():
+                for holding in st.session_state.portfolio:
+                    ticker = holding['ticker']
+                    current_value = st.session_state.target_allocation.get(ticker, 0)
+                    
+                    target = st.slider(
+                        f"**{ticker}**",
+                        min_value=0,
+                        max_value=100,
+                        value=int(current_value),
+                        step=5,
+                        format="%d%%",
+                        key=f"target_{ticker}",
+                        help=f"{holding['name']}の目標配分比率"
+                    )
+                    st.session_state.target_allocation[ticker] = target
+                    total_target += target
+            
+            # バリデーション表示
+            st.markdown("---")
+            
             if total_target == 100:
-                st.success(f"✅ 合計: {total_target}%")
+                st.success(f"✅ **合計: {total_target}%**")
+            elif total_target < 100:
+                st.warning(f"⚠️ **合計: {total_target}%** (残り {100-total_target}%)")
             else:
-                st.warning(f"⚠️ 合計: {total_target}% (100%に調整してください)")
+                st.error(f"❌ **合計: {total_target}%** (超過 {total_target-100}%)")
+            
+            # リセットボタン
+            if st.button("🔄 配分をリセット", key="reset_allocation"):
+                st.session_state.target_allocation = {}
+                st.rerun()
     
+    # ================================================================================
     # メインコンテンツ
+    # ================================================================================
+    
     if not st.session_state.portfolio:
         # ウェルカム画面
-        st.info("👈 サイドバーから銘柄を追加してポートフォリオを作成してください")
+        st.info("👈 **サイドバーから銘柄を追加してポートフォリオを作成してください**")
         
         col1, col2, col3 = st.columns(3)
         with col1:
