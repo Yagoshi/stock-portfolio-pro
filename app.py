@@ -33,6 +33,71 @@ TRADING_DAYS = 252
 BENCHMARK_JP = "^N225"  # 日経225
 BENCHMARK_US = "^GSPC"  # S&P500
 
+
+# ============================================================
+# 1.5 主要銘柄リスト（ティッカーサジェスト用）
+# ============================================================
+TICKER_CATALOG = {
+    # ── 米国株 ──
+    "AAPL": "Apple",
+    "MSFT": "Microsoft",
+    "GOOGL": "Alphabet (Google)",
+    "AMZN": "Amazon",
+    "TSLA": "Tesla",
+    "NVDA": "NVIDIA",
+    "META": "Meta Platforms",
+    "NFLX": "Netflix",
+    "AMD": "Advanced Micro Devices",
+    "INTC": "Intel",
+    "CRM": "Salesforce",
+    "ORCL": "Oracle",
+    "ADBE": "Adobe",
+    "PYPL": "PayPal",
+    "DIS": "Walt Disney",
+    "V": "Visa",
+    "MA": "Mastercard",
+    "JPM": "JPMorgan Chase",
+    "BAC": "Bank of America",
+    "GS": "Goldman Sachs",
+    "WMT": "Walmart",
+    "KO": "Coca-Cola",
+    "PEP": "PepsiCo",
+    "JNJ": "Johnson & Johnson",
+    "PFE": "Pfizer",
+    "UNH": "UnitedHealth",
+    "XOM": "Exxon Mobil",
+    "CVX": "Chevron",
+    "BA": "Boeing",
+    "CAT": "Caterpillar",
+    "SPY": "SPDR S&P 500 ETF",
+    "VOO": "Vanguard S&P 500 ETF",
+    "QQQ": "Invesco QQQ (NASDAQ)",
+    "VTI": "Vanguard Total Stock",
+    "ARKK": "ARK Innovation ETF",
+    # ── 日本株 ──
+    "7203.T": "トヨタ自動車",
+    "9984.T": "ソフトバンクグループ",
+    "6758.T": "ソニーグループ",
+    "8306.T": "三菱UFJフィナンシャル",
+    "9432.T": "日本電信電話 (NTT)",
+    "6861.T": "キーエンス",
+    "7974.T": "任天堂",
+    "9433.T": "KDDI",
+    "6501.T": "日立製作所",
+    "8035.T": "東京エレクトロン",
+    "4063.T": "信越化学工業",
+    "6902.T": "デンソー",
+    "7267.T": "本田技研工業",
+    "8058.T": "三菱商事",
+    "4502.T": "武田薬品工業",
+    "6098.T": "リクルートHD",
+    "9983.T": "ファーストリテイリング",
+    "2914.T": "日本たばこ産業 (JT)",
+    "3382.T": "セブン&アイHD",
+    "4661.T": "オリエンタルランド",
+}
+
+
 # ============================================================
 # 2. カスタムCSS
 # ============================================================
@@ -189,6 +254,38 @@ section[data-testid="stSidebar"] {
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: var(--bg-primary); }
 ::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 3px; }
+
+/* ── News Card ── */
+.news-card {
+    background: linear-gradient(135deg, #1A1F2E 0%, #151B28 100%);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 16px 20px;
+    margin-bottom: 12px;
+    transition: border-color 0.2s;
+}
+.news-card:hover {
+    border-color: var(--accent-blue);
+}
+.news-card a {
+    color: var(--accent-blue);
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 15px;
+    line-height: 1.5;
+}
+.news-card a:hover {
+    text-decoration: underline;
+}
+.news-meta {
+    color: var(--text-secondary);
+    font-size: 12px;
+    margin-top: 6px;
+}
+.news-publisher {
+    color: var(--accent-green);
+    font-weight: 500;
+}
 </style>
 """
 
@@ -255,6 +352,19 @@ def get_exchange_rate() -> float:
 def fetch_benchmark(ticker: str, period: str = "1y") -> pd.DataFrame:
     """ベンチマークデータを取得"""
     return fetch_stock_data(ticker, period)
+
+
+@st.cache_data(ttl=600)
+def fetch_stock_news(ticker: str) -> list:
+    """銘柄のニュースを取得（最大10件）"""
+    try:
+        stock = yf.Ticker(ticker)
+        news = stock.news
+        if news:
+            return news[:10]
+    except Exception:
+        pass
+    return []
 
 
 # ============================================================
@@ -509,6 +619,98 @@ def calculate_correlation_matrix(portfolio: list, period: str = "1y") -> pd.Data
     df = pd.DataFrame(all_prices).dropna()
     returns = df.pct_change().dropna()
     return returns.corr()
+
+
+# ============================================================
+# 5.5 モンテカルロ・シミュレーション
+# ============================================================
+
+def run_monte_carlo(returns: pd.Series, initial_value: float,
+                    years: int = 10, n_simulations: int = 200) -> np.ndarray:
+    """モンテカルロ・シミュレーションを実行
+
+    幾何ブラウン運動ベースで将来の資産推移をシミュレーション。
+    Returns: shape (n_simulations, trading_days * years + 1) の配列
+    """
+    if returns.empty or initial_value <= 0:
+        return np.array([])
+
+    mu = returns.mean()
+    sigma = returns.std()
+    total_days = TRADING_DAYS * years
+
+    # 日次リターンを正規分布から生成
+    daily_returns = np.random.normal(mu, sigma, size=(n_simulations, total_days))
+
+    # 資産パスを構築
+    price_paths = np.zeros((n_simulations, total_days + 1))
+    price_paths[:, 0] = initial_value
+
+    for t in range(1, total_days + 1):
+        price_paths[:, t] = price_paths[:, t - 1] * (1 + daily_returns[:, t - 1])
+
+    return price_paths
+
+
+def create_monte_carlo_chart(price_paths: np.ndarray, initial_value: float,
+                             years: int = 10) -> go.Figure:
+    """モンテカルロ結果をPlotlyチャートに描画"""
+    if price_paths.size == 0:
+        return go.Figure()
+
+    n_sims, n_steps = price_paths.shape
+    x_years = np.linspace(0, years, n_steps)
+
+    fig = go.Figure()
+
+    # 個別パス（薄く描画、最大100本）
+    display_sims = min(n_sims, 100)
+    for i in range(display_sims):
+        fig.add_trace(go.Scatter(
+            x=x_years, y=price_paths[i],
+            mode="lines",
+            line=dict(color="rgba(59,130,246,0.06)", width=1),
+            hoverinfo="skip",
+            showlegend=False,
+        ))
+
+    # パーセンタイルライン
+    p10 = np.percentile(price_paths, 10, axis=0)
+    p50 = np.percentile(price_paths, 50, axis=0)
+    p90 = np.percentile(price_paths, 90, axis=0)
+
+    fig.add_trace(go.Scatter(
+        x=x_years, y=p90,
+        mode="lines", name="上位10% (楽観)",
+        line=dict(color="#00D4AA", width=2.5),
+    ))
+    fig.add_trace(go.Scatter(
+        x=x_years, y=p50,
+        mode="lines", name="中央値 (標準)",
+        line=dict(color="#F59E0B", width=3),
+    ))
+    fig.add_trace(go.Scatter(
+        x=x_years, y=p10,
+        mode="lines", name="下位10% (悲観)",
+        line=dict(color="#FF4B6E", width=2.5),
+    ))
+
+    # 初期値ライン
+    fig.add_hline(
+        y=initial_value, line_dash="dot", line_color="#8B95A5",
+        annotation_text=f"現在: {initial_value:,.0f}",
+        annotation_font_color="#8B95A5",
+    )
+
+    fig.update_layout(**base_layout(
+        xaxis_title="経過年数",
+        yaxis_title="ポートフォリオ評価額 (¥)",
+        hovermode="x unified",
+        height=520,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02,
+                    xanchor="right", x=1),
+    ))
+    return fig
 
 
 # ============================================================
@@ -797,7 +999,7 @@ def import_csv(csv_text: str) -> list:
 
 
 # ============================================================
-# 9. KPIカード HTML
+# 9. KPIカード HTML & ニュースカード HTML
 # ============================================================
 
 def kpi_card(label: str, value: str, delta: str = "", is_loss: bool = False) -> str:
@@ -814,6 +1016,30 @@ def kpi_card(label: str, value: str, delta: str = "", is_loss: bool = False) -> 
     """
 
 
+def news_card_html(title: str, link: str, publisher: str,
+                   published: str, thumbnail: str = "") -> str:
+    """ニュースカードのHTML生成"""
+    thumb_html = ""
+    if thumbnail:
+        thumb_html = (
+            f'<img src="{thumbnail}" '
+            f'style="width:80px;height:56px;object-fit:cover;border-radius:8px;'
+            f'margin-right:14px;flex-shrink:0;" />'
+        )
+    return f"""
+    <div class="news-card" style="display:flex;align-items:flex-start;">
+        {thumb_html}
+        <div style="flex:1;min-width:0;">
+            <a href="{link}" target="_blank" rel="noopener">{title}</a>
+            <div class="news-meta">
+                <span class="news-publisher">{publisher}</span>
+                &nbsp;·&nbsp; {published}
+            </div>
+        </div>
+    </div>
+    """
+
+
 def format_jpy(val: float) -> str:
     """日本円フォーマット"""
     if abs(val) >= 1e8:
@@ -825,7 +1051,7 @@ def format_jpy(val: float) -> str:
 
 
 # ============================================================
-# 10. サイドバーUI
+# 10. サイドバーUI（ティッカーサジェスト機能付き）
 # ============================================================
 
 def render_sidebar():
@@ -844,9 +1070,34 @@ def render_sidebar():
         st.markdown("---")
         st.markdown("### ➕ 銘柄を追加")
 
+        # ── 入力モード切替（サジェスト / 自由入力） ──
+        input_mode = st.toggle(
+            "📝 自由入力モード", value=False,
+            help="ONにするとリストにない銘柄も手動入力できます",
+        )
+
         with st.form("add_stock", clear_on_submit=True):
-            ticker = st.text_input("ティッカー", placeholder="例: AAPL, 7203.T",
-                                   help="日本株は .T を付ける（例: 7203.T）")
+            if input_mode:
+                # 自由入力モード（従来どおり）
+                ticker = st.text_input(
+                    "ティッカー",
+                    placeholder="例: AAPL, 7203.T",
+                    help="日本株は .T を付ける（例: 7203.T）",
+                )
+            else:
+                # サジェスト選択モード
+                options = [f"{t}  —  {n}" for t, n in TICKER_CATALOG.items()]
+                selected = st.selectbox(
+                    "銘柄を検索・選択",
+                    options=["（選択してください）"] + options,
+                    index=0,
+                    help="検索窓に銘柄名やティッカーを入力して絞り込めます",
+                )
+                if selected and selected != "（選択してください）":
+                    ticker = selected.split("  —  ")[0].strip()
+                else:
+                    ticker = ""
+
             col1, col2 = st.columns(2)
             with col1:
                 shares = st.number_input("株数", min_value=0.0, value=0.0, step=1.0)
@@ -882,10 +1133,9 @@ def render_sidebar():
             st.markdown("---")
             st.markdown("### 🔗 共有")
             if st.button("📋 共有リンクを生成", use_container_width=True):
-                encoded = encode_portfolio(st.session_state["portfolio"])
-                share_url = f"?p={encoded}"
+                share_url = generate_share_url(st.session_state["portfolio"])
                 st.code(share_url, language=None)
-                st.info("👆 このパラメータをアプリURLの末尾に追加して共有できます")
+                st.info("👆 このURLを友人に送ると同じポートフォリオが復元されます")
 
             # CSVエクスポート
             csv_data = export_csv(st.session_state["portfolio"])
@@ -995,8 +1245,10 @@ def render_main():
             f"{sharpe:.2f}",
         ), unsafe_allow_html=True)
 
-    # ─── タブ ───
-    tab1, tab2, tab3, tab4 = st.tabs(["📋 概要", "📈 チャート", "🔬 分析", "🏢 個別銘柄"])
+    # ─── タブ（5つに拡張） ───
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(
+        ["📋 概要", "📈 チャート", "🔬 分析", "🏢 個別銘柄", "🔮 シミュレーション"]
+    )
 
     # ── タブ1: 概要 ──
     with tab1:
@@ -1153,7 +1405,7 @@ def render_main():
         else:
             st.info("分析に十分なデータがありません。")
 
-    # ── タブ4: 個別銘柄 ──
+    # ── タブ4: 個別銘柄（ニュースフィード付き） ──
     with tab4:
         st.markdown('<div class="section-header">個別銘柄チャート</div>',
                     unsafe_allow_html=True)
@@ -1186,6 +1438,153 @@ def render_main():
                 create_candlestick_chart(selected_ticker, period=chart_period),
                 use_container_width=True,
             )
+
+            # ── ニュースフィード ──
+            st.markdown('<div class="section-header">📰 関連ニュース</div>',
+                        unsafe_allow_html=True)
+
+            with st.spinner("ニュースを取得中..."):
+                news_items = fetch_stock_news(selected_ticker)
+
+            if news_items:
+                for article in news_items:
+                    # yfinance news の構造に対応
+                    title = article.get("title", "")
+                    link = article.get("link", "")
+                    publisher = article.get("publisher", "")
+                    thumbnail = ""
+
+                    # サムネイル取得（yfinance の構造はバージョンで変わりうる）
+                    thumb_data = article.get("thumbnail", {})
+                    if isinstance(thumb_data, dict):
+                        resolutions = thumb_data.get("resolutions", [])
+                        if resolutions:
+                            thumbnail = resolutions[0].get("url", "")
+
+                    # 発行日時のフォーマット
+                    pub_ts = article.get("providerPublishTime", 0)
+                    if pub_ts:
+                        try:
+                            pub_dt = datetime.fromtimestamp(pub_ts)
+                            published = pub_dt.strftime("%Y/%m/%d %H:%M")
+                        except Exception:
+                            published = ""
+                    else:
+                        published = ""
+
+                    if title and link:
+                        st.markdown(
+                            news_card_html(title, link, publisher, published, thumbnail),
+                            unsafe_allow_html=True,
+                        )
+            else:
+                st.caption("ニュースが見つかりませんでした。")
+
+    # ── タブ5: モンテカルロ・シミュレーション ──
+    with tab5:
+        st.markdown(
+            '<div class="section-header">🔮 モンテカルロ・シミュレーション</div>',
+            unsafe_allow_html=True,
+        )
+        st.caption(
+            "過去のリターン分布に基づいて、今後の資産推移を確率的にシミュレーションします。"
+            "将来の正確な予測ではなく、リスクの可視化を目的としたツールです。"
+        )
+
+        if port_returns.empty or len(port_returns) < 20:
+            st.info("シミュレーションにはより多くの過去データが必要です。")
+        else:
+            # パラメータ設定
+            col1, col2 = st.columns(2)
+            with col1:
+                sim_years = st.slider(
+                    "予測期間（年）", min_value=1, max_value=20,
+                    value=10, step=1,
+                )
+            with col2:
+                n_sims = st.select_slider(
+                    "シナリオ数",
+                    options=[100, 200, 500, 1000],
+                    value=200,
+                )
+
+            initial_value = summary["total_value_jpy"]
+
+            if st.button("▶ シミュレーション実行", use_container_width=True,
+                         type="primary"):
+                with st.spinner("シミュレーション実行中..."):
+                    paths = run_monte_carlo(
+                        port_returns, initial_value,
+                        years=sim_years, n_simulations=n_sims,
+                    )
+
+                if paths.size > 0:
+                    # チャート描画
+                    st.plotly_chart(
+                        create_monte_carlo_chart(paths, initial_value, years=sim_years),
+                        use_container_width=True,
+                    )
+
+                    # 最終日の分布から指標を算出
+                    final_values = paths[:, -1]
+                    p10 = np.percentile(final_values, 10)
+                    p50 = np.percentile(final_values, 50)
+                    p90 = np.percentile(final_values, 90)
+
+                    # KPIカードで結果表示
+                    st.markdown(
+                        '<div class="section-header">シミュレーション結果サマリー</div>',
+                        unsafe_allow_html=True,
+                    )
+
+                    rc1, rc2, rc3 = st.columns(3)
+
+                    with rc1:
+                        growth = (p10 / initial_value - 1) * 100
+                        st.markdown(kpi_card(
+                            "悲観シナリオ (下位10%)",
+                            format_jpy(p10),
+                            f"{'▲' if growth >= 0 else '▼'} {growth:+.1f}%",
+                            is_loss=growth < 0,
+                        ), unsafe_allow_html=True)
+
+                    with rc2:
+                        growth = (p50 / initial_value - 1) * 100
+                        st.markdown(kpi_card(
+                            "標準シナリオ (中央値)",
+                            format_jpy(p50),
+                            f"{'▲' if growth >= 0 else '▼'} {growth:+.1f}%",
+                            is_loss=growth < 0,
+                        ), unsafe_allow_html=True)
+
+                    with rc3:
+                        growth = (p90 / initial_value - 1) * 100
+                        st.markdown(kpi_card(
+                            "楽観シナリオ (上位10%)",
+                            format_jpy(p90),
+                            f"▲ {growth:+.1f}%",
+                            is_loss=False,
+                        ), unsafe_allow_html=True)
+
+                    # 確率分析
+                    prob_profit = (final_values > initial_value).mean() * 100
+                    prob_double = (final_values > initial_value * 2).mean() * 100
+                    prob_halve = (final_values < initial_value * 0.5).mean() * 100
+
+                    st.markdown(
+                        '<div class="section-header">確率分析</div>',
+                        unsafe_allow_html=True,
+                    )
+                    pc1, pc2, pc3 = st.columns(3)
+                    with pc1:
+                        st.metric("元本プラスの確率", f"{prob_profit:.1f}%")
+                    with pc2:
+                        st.metric("資産2倍の確率", f"{prob_double:.1f}%")
+                    with pc3:
+                        st.metric("資産半減の確率", f"{prob_halve:.1f}%")
+
+                else:
+                    st.error("シミュレーションの実行に失敗しました。")
 
 
 # ============================================================
