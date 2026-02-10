@@ -816,6 +816,112 @@ def inject_css():
 
 
 # ============================================================
+# 2.5 セクター判定関数
+# ============================================================
+
+def get_sector_for_ticker(ticker: str) -> str:
+    """ティッカーからセクターを推定"""
+    # テクノロジー
+    tech_tickers = {"AAPL", "MSFT", "GOOGL", "GOOG", "AMZN", "META", "NVDA", "AMD", "INTC", 
+                   "AVGO", "ORCL", "ADBE", "CRM", "CSCO", "ACN", "IBM", "QCOM", "TXN", 
+                   "AMAT", "MU", "LRCX", "KLAC", "SNPS", "CDNS", "MRVL", "NXPI", "SHOP", 
+                   "PYPL", "SNOW", "PLTR", "CRWD", "NET", "DDOG", "ZS", "OKTA", "TEAM", 
+                   "NOW", "WDAY", "PANW", "FTNT", "SQ", "6758.T", "6501.T", "6752.T", "6503.T", 
+                   "6702.T", "6701.T", "6594.T", "6841.T", "6857.T", "6861.T", "8035.T", 
+                   "6920.T", "6146.T", "6981.T", "6723.T", "6954.T", "6273.T", "6383.T",
+                   "6976.T", "6963.T", "6971.T", "6762.T", "7731.T", "7733.T", "7735.T",
+                   "7741.T", "7751.T", "6952.T", "6967.T", "4704.T", "3659.T", "9697.T",
+                   "6178.T", "9602.T", "9735.T", "9613.T"}
+    
+    # 金融
+    finance_tickers = {"JPM", "BAC", "WFC", "C", "GS", "MS", "BLK", "SCHW", "AXP", "V", "MA", 
+                      "COIN", "SOFI", "HOOD", "AFRM", "USB", "PNC", "TFC", "COF", "BK", "STT", 
+                      "AIG", "MET", "PRU", "ALL", "PGR", "TRV", "CB", "8306.T", "8316.T", 
+                      "8411.T", "8591.T", "8604.T", "8601.T", "7182.T", "8750.T", "8766.T", 
+                      "8725.T", "8630.T"}
+    
+    # ヘルスケア
+    healthcare_tickers = {"JNJ", "UNH", "PFE", "ABBV", "LLY", "MRK", "TMO", "ABT", "DHR", "BMY", 
+                         "AMGN", "GILD", "CVS", "CI", "ISRG", "REGN", "VRTX", "SYK", "BSX", 
+                         "MDT", "ELV", "BIIB", "MRNA", "ZTS", "HCA", "IDXX", "IQV", "A", "BAX", 
+                         "BDX", "4502.T", "4503.T", "4568.T", "4507.T", "4523.T", "4519.T",
+                         "4541.T", "6869.T", "7453.T", "7509.T", "4921.T"}
+    
+    # エネルギー
+    energy_tickers = {"XOM", "CVX", "COP", "SLB", "EOG", "MPC", "PSX", "VLO", "OXY", "HAL", 
+                     "BKR", "KMI", "WMB", "OKE", "LNG", "FANG", "DVN", "HES", "MRO", "APA", 
+                     "5020.T", "5401.T", "5411.T", "5714.T", "9501.T", "9502.T", "9503.T",
+                     "9531.T", "9532.T"}
+    
+    # 消費財
+    consumer_tickers = {"WMT", "HD", "COST", "MCD", "NKE", "SBUX", "TGT", "LOW", "TJX", "BKNG", 
+                       "ABNB", "MAR", "HLT", "YUM", "CMG", "ROST", "DG", "DLTR", "BBY", "EBAY", 
+                       "ETSY", "W", "CHWY", "LULU", "DECK", "ULTA", "EL", "CL", "PG", "KO", 
+                       "PEP", "MDLZ", "KHC", "GIS", "K", "HSY", "MO", "PM", "BUD", "TAP", "STZ",
+                       "3382.T", "8267.T", "9983.T", "9843.T", "2502.T", "2503.T", "2914.T",
+                       "2501.T", "2269.T", "2282.T", "2801.T", "2802.T", "2871.T", "2002.T",
+                       "3086.T", "3099.T", "8279.T", "2651.T", "3048.T", "9831.T", "9873.T",
+                       "9861.T", "2702.T"}
+    
+    # 自動車・輸送
+    auto_tickers = {"TSLA", "7203.T", "7267.T", "7201.T", "7269.T", "7270.T", "7261.T", "7211.T", 
+                   "5108.T", "7259.T", "6902.T", "BA", "LUV", "DAL", "UAL", "AAL", "ALK", 
+                   "9020.T", "9021.T", "9022.T", "9062.T", "9064.T", "9202.T", "9201.T",
+                   "7202.T", "7205.T", "7272.T", "7276.T", "9101.T", "9107.T"}
+    
+    # 通信・メディア
+    comm_tickers = {"NFLX", "DIS", "CMCSA", "T", "VZ", "TMUS", "CHTR", "EA", "TTWO", "RBLX", 
+                   "U", "SPOT", "PINS", "SNAP", "MTCH", "WBD", "9984.T", "9432.T", "9433.T", 
+                   "9434.T", "4755.T", "4689.T", "7974.T", "9766.T", "9684.T", "7832.T",
+                   "4324.T"}
+    
+    # 産業
+    industrial_tickers = {"GE", "CAT", "HON", "UPS", "RTX", "LMT", "DE", "MMM", "GD", "NOC", 
+                         "EMR", "ETN", "ITW", "PH", "CMI", "PCAR", "ROK", "FDX", "NSC", "UNP", 
+                         "CSX", "1801.T", "1802.T", "1803.T", "1812.T", "1821.T", "5201.T",
+                         "5332.T"}
+    
+    # 不動産
+    reit_tickers = {"AMT", "PLD", "CCI", "EQIX", "PSA", "WELL", "DLR", "O", "SBAC", "AVB", 
+                   "EQR", "VTR", "SPG", "ARE", "8801.T", "8802.T", "8830.T", "1928.T", "1925.T",
+                   "1963.T"}
+    
+    # 素材・化学
+    materials_tickers = {"LIN", "APD", "SHW", "ECL", "DD", "DOW", "NEM", "FCX", "NUE", "STLD", 
+                        "VMC", "MLM", "4063.T", "4005.T", "4183.T", "4188.T", "4452.T", "3401.T",
+                        "3402.T", "4151.T", "4911.T", "4612.T"}
+    
+    # エンターテイメント・レジャー
+    entertainment_tickers = {"4661.T", "6098.T"}
+    
+    # セクター判定
+    if ticker in tech_tickers:
+        return "テクノロジー"
+    elif ticker in finance_tickers:
+        return "金融"
+    elif ticker in healthcare_tickers:
+        return "ヘルスケア"
+    elif ticker in energy_tickers:
+        return "エネルギー"
+    elif ticker in consumer_tickers:
+        return "消費財・小売"
+    elif ticker in auto_tickers:
+        return "自動車・輸送"
+    elif ticker in comm_tickers:
+        return "通信・メディア"
+    elif ticker in industrial_tickers:
+        return "産業・製造"
+    elif ticker in reit_tickers:
+        return "不動産"
+    elif ticker in materials_tickers:
+        return "素材・化学"
+    elif ticker in entertainment_tickers:
+        return "エンタメ・レジャー"
+    else:
+        return "その他"
+
+
+# ============================================================
 # 3. データ取得関数群
 # ============================================================
 
@@ -838,9 +944,22 @@ def fetch_stock_info(ticker: str) -> dict:
     try:
         stock = yf.Ticker(ticker)
         info = stock.info
+        
+        # 銘柄名のフォールバック
+        name = info.get("shortName", info.get("longName", ""))
+        if not name or name == ticker:
+            # TICKER_CATALOGから取得を試みる
+            name = TICKER_CATALOG.get(ticker, ticker)
+        
+        # セクターのフォールバック
+        sector = info.get("sector", "")
+        if not sector or sector == "N/A":
+            # get_sector_for_ticker関数で推定
+            sector = get_sector_for_ticker(ticker)
+        
         return {
-            "name": info.get("shortName", info.get("longName", ticker)),
-            "sector": info.get("sector", "N/A"),
+            "name": name,
+            "sector": sector,
             "industry": info.get("industry", "N/A"),
             "currency": info.get("currency", "JPY" if ".T" in ticker else "USD"),
             "dividend_yield": info.get("dividendYield", 0) or 0,
@@ -849,11 +968,16 @@ def fetch_stock_info(ticker: str) -> dict:
             "previous_close": info.get("previousClose", 0),
         }
     except Exception:
+        # エラー時はTICKER_CATALOGと推定セクターを使用
         return {
-            "name": ticker, "sector": "N/A", "industry": "N/A",
+            "name": TICKER_CATALOG.get(ticker, ticker),
+            "sector": get_sector_for_ticker(ticker),
+            "industry": "N/A",
             "currency": "JPY" if ".T" in ticker else "USD",
-            "dividend_yield": 0, "market_cap": 0,
-            "current_price": 0, "previous_close": 0,
+            "dividend_yield": 0,
+            "market_cap": 0,
+            "current_price": 0,
+            "previous_close": 0,
         }
 
 
@@ -2455,109 +2579,6 @@ def create_annual_dividend_chart(monthly_dividends: pd.DataFrame) -> go.Figure:
 # 8.8 ★新機能★ 注目株スキャン関連の関数
 # ============================================================
 
-def get_sector_for_ticker(ticker: str) -> str:
-    """ティッカーからセクターを推定"""
-    # テクノロジー
-    tech_tickers = {"AAPL", "MSFT", "GOOGL", "GOOG", "AMZN", "META", "NVDA", "AMD", "INTC", 
-                   "AVGO", "ORCL", "ADBE", "CRM", "CSCO", "ACN", "IBM", "QCOM", "TXN", 
-                   "AMAT", "MU", "LRCX", "KLAC", "SNPS", "CDNS", "MRVL", "NXPI", "SHOP", 
-                   "PYPL", "SNOW", "PLTR", "CRWD", "NET", "DDOG", "ZS", "OKTA", "TEAM", 
-                   "NOW", "WDAY", "PANW", "FTNT", "SQ", "6758.T", "6501.T", "6752.T", "6503.T", 
-                   "6702.T", "6701.T", "6594.T", "6841.T", "6857.T", "6861.T", "8035.T", 
-                   "6920.T", "6146.T", "6981.T", "6723.T", "6954.T", "6273.T", "6383.T",
-                   "6976.T", "6963.T", "6971.T", "6762.T", "7731.T", "7733.T", "7735.T",
-                   "7741.T", "7751.T", "6952.T", "6967.T", "4704.T", "3659.T", "9697.T",
-                   "6178.T", "9602.T", "9735.T", "9613.T"}
-    
-    # 金融
-    finance_tickers = {"JPM", "BAC", "WFC", "C", "GS", "MS", "BLK", "SCHW", "AXP", "V", "MA", 
-                      "COIN", "SOFI", "HOOD", "AFRM", "USB", "PNC", "TFC", "COF", "BK", "STT", 
-                      "AIG", "MET", "PRU", "ALL", "PGR", "TRV", "CB", "8306.T", "8316.T", 
-                      "8411.T", "8591.T", "8604.T", "8601.T", "7182.T", "8750.T", "8766.T", 
-                      "8725.T", "8630.T"}
-    
-    # ヘルスケア
-    healthcare_tickers = {"JNJ", "UNH", "PFE", "ABBV", "LLY", "MRK", "TMO", "ABT", "DHR", "BMY", 
-                         "AMGN", "GILD", "CVS", "CI", "ISRG", "REGN", "VRTX", "SYK", "BSX", 
-                         "MDT", "ELV", "BIIB", "MRNA", "ZTS", "HCA", "IDXX", "IQV", "A", "BAX", 
-                         "BDX", "4502.T", "4503.T", "4568.T", "4507.T", "4523.T", "4519.T",
-                         "4541.T", "6869.T", "7453.T", "7509.T", "4921.T"}
-    
-    # エネルギー
-    energy_tickers = {"XOM", "CVX", "COP", "SLB", "EOG", "MPC", "PSX", "VLO", "OXY", "HAL", 
-                     "BKR", "KMI", "WMB", "OKE", "LNG", "FANG", "DVN", "HES", "MRO", "APA", 
-                     "5020.T", "5401.T", "5411.T", "5714.T", "9501.T", "9502.T", "9503.T",
-                     "9531.T", "9532.T"}
-    
-    # 消費財
-    consumer_tickers = {"WMT", "HD", "COST", "MCD", "NKE", "SBUX", "TGT", "LOW", "TJX", "BKNG", 
-                       "ABNB", "MAR", "HLT", "YUM", "CMG", "ROST", "DG", "DLTR", "BBY", "EBAY", 
-                       "ETSY", "W", "CHWY", "LULU", "DECK", "ULTA", "EL", "CL", "PG", "KO", 
-                       "PEP", "MDLZ", "KHC", "GIS", "K", "HSY", "MO", "PM", "BUD", "TAP", "STZ",
-                       "3382.T", "8267.T", "9983.T", "9843.T", "2502.T", "2503.T", "2914.T",
-                       "2501.T", "2269.T", "2282.T", "2801.T", "2802.T", "2871.T", "2002.T",
-                       "3086.T", "3099.T", "8279.T", "2651.T", "3048.T", "9831.T", "9873.T",
-                       "9861.T", "2702.T"}
-    
-    # 自動車・輸送
-    auto_tickers = {"TSLA", "7203.T", "7267.T", "7201.T", "7269.T", "7270.T", "7261.T", "7211.T", 
-                   "5108.T", "7259.T", "6902.T", "BA", "LUV", "DAL", "UAL", "AAL", "ALK", 
-                   "9020.T", "9021.T", "9022.T", "9062.T", "9064.T", "9202.T", "9201.T",
-                   "7202.T", "7205.T", "7272.T", "7276.T", "9101.T", "9107.T"}
-    
-    # 通信・メディア
-    comm_tickers = {"NFLX", "DIS", "CMCSA", "T", "VZ", "TMUS", "CHTR", "EA", "TTWO", "RBLX", 
-                   "U", "SPOT", "PINS", "SNAP", "MTCH", "WBD", "9984.T", "9432.T", "9433.T", 
-                   "9434.T", "4755.T", "4689.T", "7974.T", "9766.T", "9684.T", "7832.T",
-                   "4324.T"}
-    
-    # 産業
-    industrial_tickers = {"GE", "CAT", "HON", "UPS", "RTX", "LMT", "DE", "MMM", "GD", "NOC", 
-                         "EMR", "ETN", "ITW", "PH", "CMI", "PCAR", "ROK", "FDX", "NSC", "UNP", 
-                         "CSX", "1801.T", "1802.T", "1803.T", "1812.T", "1821.T", "5201.T",
-                         "5332.T"}
-    
-    # 不動産
-    reit_tickers = {"AMT", "PLD", "CCI", "EQIX", "PSA", "WELL", "DLR", "O", "SBAC", "AVB", 
-                   "EQR", "VTR", "SPG", "ARE", "8801.T", "8802.T", "8830.T", "1928.T", "1925.T",
-                   "1963.T"}
-    
-    # 素材・化学
-    materials_tickers = {"LIN", "APD", "SHW", "ECL", "DD", "DOW", "NEM", "FCX", "NUE", "STLD", 
-                        "VMC", "MLM", "4063.T", "4005.T", "4183.T", "4188.T", "4452.T", "3401.T",
-                        "3402.T", "4151.T", "4911.T", "4612.T"}
-    
-    # エンターテイメント・レジャー
-    entertainment_tickers = {"4661.T", "6098.T"}
-    
-    # セクター判定
-    if ticker in tech_tickers:
-        return "テクノロジー"
-    elif ticker in finance_tickers:
-        return "金融"
-    elif ticker in healthcare_tickers:
-        return "ヘルスケア"
-    elif ticker in energy_tickers:
-        return "エネルギー"
-    elif ticker in consumer_tickers:
-        return "消費財・小売"
-    elif ticker in auto_tickers:
-        return "自動車・輸送"
-    elif ticker in comm_tickers:
-        return "通信・メディア"
-    elif ticker in industrial_tickers:
-        return "産業・製造"
-    elif ticker in reit_tickers:
-        return "不動産"
-    elif ticker in materials_tickers:
-        return "素材・化学"
-    elif ticker in entertainment_tickers:
-        return "エンタメ・レジャー"
-    else:
-        return "その他"
-
-
-def scan_trending_stocks(num_stocks: int = 100, lookback_days: int = 3) -> pd.DataFrame:
     """
     TICKER_CATALOGから注目株をスキャン
     
