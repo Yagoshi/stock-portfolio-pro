@@ -1688,6 +1688,20 @@ def generate_share_url(portfolio: list) -> str:
     return f"{base_url}?p={encoded}"
 
 
+def update_url_with_portfolio(portfolio: list):
+    """
+    ポートフォリオの変更をURLパラメータに反映
+    （ブラウザのアドレスバーを自動更新）
+    """
+    if portfolio:
+        encoded = encode_portfolio(portfolio)
+        st.query_params["p"] = encoded
+    else:
+        # ポートフォリオが空の場合はパラメータをクリア
+        if "p" in st.query_params:
+            del st.query_params["p"]
+
+
 # ============================================================
 # 8. CSV インポート/エクスポート
 # ============================================================
@@ -2778,12 +2792,12 @@ def render_sidebar():
         # 入力方法の選択（フォーム外）
         st.markdown("### 📊 入力方法")
         input_method = st.radio(
-            "どちらかを選択",
-            ["取得単価を入力", "評価額と株数から計算", "株数のみ（評価額から逆算）"],
+            "わかっている情報を選択",
+            ["現在の評価額のみ", "現在の保有株数のみ", "購入時の情報（取得単価+株数）"],
             help=(
-                "**取得単価を入力**: 購入時の価格がわかる場合\n\n"
-                "**評価額と株数**: 現在の評価額と株数がわかる場合（現在株価から取得単価を逆算）\n\n"
-                "**株数のみ**: 株数だけわかる場合（評価額を入力して取得単価を逆算）"
+                "**現在の評価額のみ**: 証券アプリに「¥250,000」と表示されている → 株数は自動計算（損益は不明）\n\n"
+                "**現在の保有株数のみ**: 「100株」だけわかる → 評価額は自動計算（損益は不明）\n\n"
+                "**購入時の情報**: 購入時の単価と株数がわかる → 損益も正確に表示"
             ),
             key="input_method_radio",
         )
@@ -2797,8 +2811,58 @@ def render_sidebar():
             )
 
             # 入力方法に応じた入力欄を動的に表示
-            if input_method == "取得単価を入力":
-                # パターン1: 従来通り（株数 + 取得単価）
+            if input_method == "現在の評価額のみ":
+                # パターン1: 評価額のみ → 現在株価から株数を逆算
+                current_value_input = st.number_input(
+                    "現在の評価額（総額）", 
+                    min_value=0.0, 
+                    value=0.0, 
+                    step=100.0,
+                    help="証券会社アプリに表示されている評価額",
+                )
+                
+                st.caption("💡 株数は現在株価から自動計算されます（損益は不明となります）")
+                
+                shares = None
+                cost_price = None
+                value_only_mode = True
+                
+            elif input_method == "現在の保有株数のみ":
+                # パターン2: 株数のみ → 評価額は現在株価×株数で自動計算
+                shares = st.number_input("保有株数", min_value=0.0, value=0.0, step=1.0)
+                
+                # ティッカーが入力されたら現在株価を表示
+                temp_ticker = ""
+                if manual_ticker.strip():
+                    temp_ticker = manual_ticker.strip().upper()
+                elif selected_from_list and selected_from_list != "（リストから選択）":
+                    temp_ticker = selected_from_list.split("  —  ")[0].strip()
+                
+                if temp_ticker and shares > 0:
+                    try:
+                        info = fetch_stock_info(temp_ticker)
+                        temp_current_price = info["current_price"]
+                        
+                        if temp_current_price == 0:
+                            hist = fetch_stock_data(temp_ticker, period="5d")
+                            if not hist.empty:
+                                temp_current_price = float(hist["Close"].iloc[-1])
+                        
+                        if temp_current_price > 0:
+                            auto_current_value = temp_current_price * shares
+                            st.success(f"✅ 現在株価: **¥{temp_current_price:,.2f}** / 株")
+                            st.info(f"📊 現在の評価額: **¥{auto_current_value:,.0f}**")
+                    except:
+                        pass
+                
+                st.caption("💡 評価額は現在株価から自動計算されます（損益は不明となります）")
+                
+                current_value_input = None
+                cost_price = None
+                value_only_mode = False
+                
+            else:  # 購入時の情報（取得単価+株数）
+                # パターン3: 従来通り（株数 + 取得単価）→ 損益が正確にわかる
                 col1, col2 = st.columns(2)
                 with col1:
                     shares = st.number_input("保有株数", min_value=0.0, value=0.0, step=1.0)
@@ -2815,69 +2879,10 @@ def render_sidebar():
                     total_cost = cost_price * shares
                     st.info(f"💰 取得総額: **¥{total_cost:,.0f}**")
                 
+                st.caption("✅ 損益が正確に表示されます")
+                
                 current_value_input = None
-                shares_only_mode = False
-                
-            elif input_method == "評価額と株数から計算":
-                # パターン2: 評価額 + 株数（現在株価を取得して取得単価を逆算）
-                col1, col2 = st.columns(2)
-                with col1:
-                    current_value_input = st.number_input(
-                        "現在の評価額（総額）", 
-                        min_value=0.0, 
-                        value=0.0, 
-                        step=100.0,
-                        help="現在この銘柄が何円分になっているか",
-                    )
-                with col2:
-                    shares = st.number_input("保有株数", min_value=0.0, value=0.0, step=1.0)
-                
-                if current_value_input > 0 and shares > 0:
-                    implied_price = current_value_input / shares
-                    st.info(f"📊 推定現在株価: **¥{implied_price:,.2f}** / 株")
-                
-                cost_price = None
-                shares_only_mode = False
-                
-            else:  # 株数のみ（評価額から逆算）
-                # パターン3: 株数だけ入力 → ティッカーから現在株価取得 → 評価額入力 → 取得単価逆算
-                shares = st.number_input("保有株数", min_value=0.0, value=0.0, step=1.0)
-                
-                # ティッカーが入力されたら現在株価を表示
-                temp_ticker = ""
-                if manual_ticker.strip():
-                    temp_ticker = manual_ticker.strip().upper()
-                elif selected_from_list and selected_from_list != "（リストから選択）":
-                    temp_ticker = selected_from_list.split("  —  ")[0].strip()
-                
-                if temp_ticker and shares > 0:
-                    with st.spinner(f"{temp_ticker} の現在価格を取得中..."):
-                        try:
-                            info = fetch_stock_info(temp_ticker)
-                            temp_current_price = info["current_price"]
-                            
-                            if temp_current_price == 0:
-                                hist = fetch_stock_data(temp_ticker, period="5d")
-                                if not hist.empty:
-                                    temp_current_price = float(hist["Close"].iloc[-1])
-                            
-                            if temp_current_price > 0:
-                                auto_current_value = temp_current_price * shares
-                                st.success(f"✅ 現在株価: **¥{temp_current_price:,.2f}** / 株")
-                                st.info(f"📊 現在の評価額: **¥{auto_current_value:,.0f}** （{shares:.0f}株 × ¥{temp_current_price:,.2f}）")
-                        except:
-                            pass
-                
-                current_value_input = st.number_input(
-                    "現在の評価額（総額）", 
-                    min_value=0.0, 
-                    value=0.0, 
-                    step=100.0,
-                    help="証券会社アプリなどに表示されている現在の評価額を入力",
-                )
-                
-                cost_price = None
-                shares_only_mode = True
+                value_only_mode = False
             
             buy_date = st.date_input("取得日", value=datetime.now())
             submitted = st.form_submit_button("✅ 追加", use_container_width=True)
@@ -2895,47 +2900,69 @@ def render_sidebar():
                     st.error("ティッカーを入力してください")
                     st.stop()
                 
-                if shares <= 0:
-                    st.error("株数を入力してください")
+                # 現在株価を取得（全パターンで必要）
+                info = fetch_stock_info(ticker)
+                current_price = info["current_price"]
+                
+                if current_price == 0:
+                    hist = fetch_stock_data(ticker, period="5d")
+                    if not hist.empty:
+                        current_price = float(hist["Close"].iloc[-1])
+                
+                if current_price == 0:
+                    st.error(f"❌ {ticker} の現在価格を取得できませんでした。ティッカーを確認してください。")
                     st.stop()
-
-                # 取得単価の計算
-                if input_method == "取得単価を入力":
-                    if cost_price <= 0:
-                        st.error("取得単価を入力してください")
-                        st.stop()
-                    final_cost_price = cost_price
-                    
-                else:  # 評価額から逆算（パターン2 & 3共通）
+                
+                # パターンごとの処理
+                if input_method == "現在の評価額のみ":
+                    # 評価額から株数を逆算
                     if current_value_input <= 0:
                         st.error("現在の評価額を入力してください")
                         st.stop()
                     
-                    # 現在価格を取得
-                    info = fetch_stock_info(ticker)
-                    current_price = info["current_price"]
+                    # 株数 = 評価額 ÷ 現在株価
+                    calculated_shares = current_value_input / current_price
                     
-                    if current_price == 0:
-                        hist = fetch_stock_data(ticker, period="5d")
-                        if not hist.empty:
-                            current_price = float(hist["Close"].iloc[-1])
+                    # 取得単価は現在株価と同じに設定（損益ゼロ）
+                    final_shares = calculated_shares
+                    final_cost_price = current_price
                     
-                    if current_price == 0:
-                        st.error(f"❌ {ticker} の現在価格を取得できませんでした。ティッカーを確認してください。")
+                    st.info(f"📊 計算結果: {final_shares:.4f}株（現在株価 ¥{current_price:,.2f}から逆算）")
+                    
+                elif input_method == "現在の保有株数のみ":
+                    # 株数のみ入力、取得単価は現在株価と同じに設定（損益ゼロ）
+                    if shares <= 0:
+                        st.error("株数を入力してください")
                         st.stop()
                     
-                    # 取得単価を逆算
-                    # 現在の評価額 = 現在価格 × 株数
-                    # ユーザーが入力した評価額から、取得単価を推定
-                    actual_current_value = current_price * shares
-                    final_cost_price = current_price * (current_value_input / actual_current_value)
+                    final_shares = shares
+                    final_cost_price = current_price
+                    
+                    calculated_value = current_price * shares
+                    st.info(f"📊 計算結果: 評価額 ¥{calculated_value:,.0f}（現在株価 ¥{current_price:,.2f}）")
+                    
+                else:  # 購入時の情報
+                    # 取得単価と株数を直接使用
+                    if shares <= 0:
+                        st.error("株数を入力してください")
+                        st.stop()
+                    if cost_price <= 0:
+                        st.error("取得単価を入力してください")
+                        st.stop()
+                    
+                    final_shares = shares
+                    final_cost_price = cost_price
                 
                 st.session_state["portfolio"].append({
                     "ticker": ticker,
-                    "shares": shares,
+                    "shares": final_shares,
                     "cost_price": final_cost_price,
                     "buy_date": str(buy_date),
                 })
+                
+                # URLパラメータを更新
+                update_url_with_portfolio(st.session_state["portfolio"])
+                
                 st.success(f"✅ {ticker} を追加しました！")
                 time.sleep(0.5)
                 st.rerun()
@@ -2944,23 +2971,72 @@ def render_sidebar():
         if st.session_state["portfolio"]:
             st.markdown("---")
             st.markdown("### 📋 保有銘柄")
+            
             for i, item in enumerate(st.session_state["portfolio"]):
-                col1, col2 = st.columns([3, 1])
-                with col1:
-                    st.markdown(f"**{item['ticker']}** × {item['shares']:.0f}株")
-                    st.caption(f"取得単価: {item['cost_price']:,.2f}")
-                with col2:
-                    if st.button("🗑️", key=f"del_{i}"):
-                        st.session_state["portfolio"].pop(i)
-                        st.rerun()
+                with st.expander(f"**{item['ticker']}** × {item['shares']:.2f}株 | 取得単価: ¥{item['cost_price']:,.2f}"):
+                    # 編集フォーム
+                    edit_col1, edit_col2 = st.columns(2)
+                    
+                    with edit_col1:
+                        new_shares = st.number_input(
+                            "株数", 
+                            min_value=0.0, 
+                            value=float(item['shares']), 
+                            step=1.0,
+                            key=f"edit_shares_{i}"
+                        )
+                    
+                    with edit_col2:
+                        new_cost_price = st.number_input(
+                            "取得単価", 
+                            min_value=0.0, 
+                            value=float(item['cost_price']), 
+                            step=0.01,
+                            key=f"edit_cost_{i}"
+                        )
+                    
+                    new_buy_date = st.date_input(
+                        "取得日",
+                        value=datetime.strptime(item['buy_date'], "%Y-%m-%d").date() if item.get('buy_date') else datetime.now().date(),
+                        key=f"edit_date_{i}"
+                    )
+                    
+                    btn_col1, btn_col2 = st.columns(2)
+                    
+                    with btn_col1:
+                        if st.button("💾 更新", key=f"update_{i}", use_container_width=True):
+                            st.session_state["portfolio"][i] = {
+                                "ticker": item["ticker"],
+                                "shares": new_shares,
+                                "cost_price": new_cost_price,
+                                "buy_date": str(new_buy_date),
+                            }
+                            # URLパラメータを更新
+                            update_url_with_portfolio(st.session_state["portfolio"])
+                            st.success(f"✅ {item['ticker']} を更新しました")
+                            time.sleep(0.5)
+                            st.rerun()
+                    
+                    with btn_col2:
+                        if st.button("🗑️ 削除", key=f"del_{i}", use_container_width=True):
+                            st.session_state["portfolio"].pop(i)
+                            # URLパラメータを更新
+                            update_url_with_portfolio(st.session_state["portfolio"])
+                            st.success("削除しました")
+                            time.sleep(0.3)
+                            st.rerun()
 
             # 共有リンク生成
             st.markdown("---")
             st.markdown("### 🔗 共有")
-            if st.button("📋 共有リンクを生成", use_container_width=True):
-                share_url = generate_share_url(st.session_state["portfolio"])
-                st.code(share_url, language=None)
-                st.info("👆 このURLを友人に送ると同じポートフォリオが復元されます")
+            
+            # 現在のURLを表示（自動更新されている）
+            current_url = generate_share_url(st.session_state["portfolio"])
+            st.code(current_url, language=None)
+            st.caption("💡 このURLは銘柄の追加・編集・削除時に自動更新されます")
+            
+            if st.button("📋 URLをコピー", use_container_width=True):
+                st.info("👆 上のURLを選択してコピーしてください")
 
             # CSVエクスポート
             csv_data = export_csv(st.session_state["portfolio"])
@@ -2982,6 +3058,8 @@ def render_sidebar():
             if imported:
                 if st.button("インポートを確定"):
                     st.session_state["portfolio"] = imported
+                    # URLパラメータを更新
+                    update_url_with_portfolio(st.session_state["portfolio"])
                     st.rerun()
                 st.success(f"{len(imported)}銘柄を読み込みました")
             else:
@@ -2991,6 +3069,8 @@ def render_sidebar():
         st.markdown("---")
         if st.button("🔄 ポートフォリオをリセット", use_container_width=True):
             st.session_state["portfolio"] = []
+            # URLパラメータをクリア
+            update_url_with_portfolio([])
             st.rerun()
 
 
