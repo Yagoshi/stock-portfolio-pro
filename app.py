@@ -2779,57 +2779,111 @@ def render_sidebar():
         st.markdown("### 📊 入力方法")
         input_method = st.radio(
             "どちらかを選択",
-            ["取得単価を入力", "現在の評価額を入力"],
-            horizontal=True,
-            help="取得単価がわからない場合は、現在の評価額から自動計算します。",
+            ["取得単価を入力", "評価額と株数から計算", "株数のみ（評価額から逆算）"],
+            help=(
+                "**取得単価を入力**: 購入時の価格がわかる場合\n\n"
+                "**評価額と株数**: 現在の評価額と株数がわかる場合（現在株価から取得単価を逆算）\n\n"
+                "**株数のみ**: 株数だけわかる場合（評価額を入力して取得単価を逆算）"
+            ),
             key="input_method_radio",
         )
         
         with st.form("add_stock", clear_on_submit=True):
-            # 自由入力欄（リストにない銘柄用 / 直接入力したい場合）
+            # ティッカー選択
             manual_ticker = st.text_input(
                 "ティッカー（手動入力）",
                 placeholder="例: AAPL, 7203.T（上のリストにない場合）",
                 help="上のリストで選択済みならここは空欄でOKです。日本株は .T を付けてください。",
             )
 
-            # 株数入力
-            shares = st.number_input("保有株数", min_value=0.0, value=0.0, step=1.0)
-            
-            # 入力方法に応じた入力欄を表示
+            # 入力方法に応じた入力欄を動的に表示
             if input_method == "取得単価を入力":
-                cost_price = st.number_input(
-                    "取得単価（1株あたり）", 
-                    min_value=0.0, 
-                    value=0.0, 
-                    step=0.01,
-                    help="購入時の1株あたりの価格",
-                )
+                # パターン1: 従来通り（株数 + 取得単価）
+                col1, col2 = st.columns(2)
+                with col1:
+                    shares = st.number_input("保有株数", min_value=0.0, value=0.0, step=1.0)
+                with col2:
+                    cost_price = st.number_input(
+                        "取得単価（1株あたり）", 
+                        min_value=0.0, 
+                        value=0.0, 
+                        step=0.01,
+                        help="購入時の1株あたりの価格",
+                    )
+                
                 if cost_price > 0 and shares > 0:
                     total_cost = cost_price * shares
                     st.info(f"💰 取得総額: **¥{total_cost:,.0f}**")
-                    
-                current_value_input = None
                 
-            else:  # 現在の評価額を入力
-                current_value_input = st.number_input(
-                    "現在の評価額（総額）", 
-                    min_value=0.0, 
-                    value=0.0, 
-                    step=100.0,
-                    help="現在この銘柄が何円分になっているか",
-                )
+                current_value_input = None
+                shares_only_mode = False
+                
+            elif input_method == "評価額と株数から計算":
+                # パターン2: 評価額 + 株数（現在株価を取得して取得単価を逆算）
+                col1, col2 = st.columns(2)
+                with col1:
+                    current_value_input = st.number_input(
+                        "現在の評価額（総額）", 
+                        min_value=0.0, 
+                        value=0.0, 
+                        step=100.0,
+                        help="現在この銘柄が何円分になっているか",
+                    )
+                with col2:
+                    shares = st.number_input("保有株数", min_value=0.0, value=0.0, step=1.0)
+                
                 if current_value_input > 0 and shares > 0:
                     implied_price = current_value_input / shares
                     st.info(f"📊 推定現在株価: **¥{implied_price:,.2f}** / 株")
                 
                 cost_price = None
+                shares_only_mode = False
+                
+            else:  # 株数のみ（評価額から逆算）
+                # パターン3: 株数だけ入力 → ティッカーから現在株価取得 → 評価額入力 → 取得単価逆算
+                shares = st.number_input("保有株数", min_value=0.0, value=0.0, step=1.0)
+                
+                # ティッカーが入力されたら現在株価を表示
+                temp_ticker = ""
+                if manual_ticker.strip():
+                    temp_ticker = manual_ticker.strip().upper()
+                elif selected_from_list and selected_from_list != "（リストから選択）":
+                    temp_ticker = selected_from_list.split("  —  ")[0].strip()
+                
+                if temp_ticker and shares > 0:
+                    with st.spinner(f"{temp_ticker} の現在価格を取得中..."):
+                        try:
+                            info = fetch_stock_info(temp_ticker)
+                            temp_current_price = info["current_price"]
+                            
+                            if temp_current_price == 0:
+                                hist = fetch_stock_data(temp_ticker, period="5d")
+                                if not hist.empty:
+                                    temp_current_price = float(hist["Close"].iloc[-1])
+                            
+                            if temp_current_price > 0:
+                                auto_current_value = temp_current_price * shares
+                                st.success(f"✅ 現在株価: **¥{temp_current_price:,.2f}** / 株")
+                                st.info(f"📊 現在の評価額: **¥{auto_current_value:,.0f}** （{shares:.0f}株 × ¥{temp_current_price:,.2f}）")
+                        except:
+                            pass
+                
+                current_value_input = st.number_input(
+                    "現在の評価額（総額）", 
+                    min_value=0.0, 
+                    value=0.0, 
+                    step=100.0,
+                    help="証券会社アプリなどに表示されている現在の評価額を入力",
+                )
+                
+                cost_price = None
+                shares_only_mode = True
             
             buy_date = st.date_input("取得日", value=datetime.now())
             submitted = st.form_submit_button("✅ 追加", use_container_width=True)
 
             if submitted:
-                # 手動入力を優先、なければリスト選択を使用
+                # ティッカー取得
                 if manual_ticker.strip():
                     ticker = manual_ticker.strip().upper()
                 elif selected_from_list and selected_from_list != "（リストから選択）":
@@ -2837,48 +2891,54 @@ def render_sidebar():
                 else:
                     ticker = ""
 
-                if ticker and shares > 0:
-                    # 取得単価の計算
-                    if input_method == "取得単価を入力":
-                        if cost_price <= 0:
-                            st.error("取得単価を入力してください")
-                            st.stop()
-                        final_cost_price = cost_price
-                    else:  # 現在の評価額から逆算
-                        if current_value_input <= 0:
-                            st.error("現在の評価額を入力してください")
-                            st.stop()
-                        
-                        # 現在価格を取得
-                        info = fetch_stock_info(ticker)
-                        current_price = info["current_price"]
-                        
-                        if current_price == 0:
-                            hist = fetch_stock_data(ticker, period="5d")
-                            if not hist.empty:
-                                current_price = float(hist["Close"].iloc[-1])
-                        
-                        if current_price == 0:
-                            st.error(f"❌ {ticker} の現在価格を取得できませんでした。ティッカーを確認してください。")
-                            st.stop()
-                        
-                        # 取得単価を逆算
-                        # 現在の評価額 = 現在価格 × 株数
-                        # ユーザーが入力した評価額から、取得単価を推定
-                        actual_current_value = current_price * shares
-                        final_cost_price = current_price * (current_value_input / actual_current_value)
+                if not ticker:
+                    st.error("ティッカーを入力してください")
+                    st.stop()
+                
+                if shares <= 0:
+                    st.error("株数を入力してください")
+                    st.stop()
+
+                # 取得単価の計算
+                if input_method == "取得単価を入力":
+                    if cost_price <= 0:
+                        st.error("取得単価を入力してください")
+                        st.stop()
+                    final_cost_price = cost_price
                     
-                    st.session_state["portfolio"].append({
-                        "ticker": ticker,
-                        "shares": shares,
-                        "cost_price": final_cost_price,
-                        "buy_date": str(buy_date),
-                    })
-                    st.success(f"✅ {ticker} を追加しました！")
-                    time.sleep(0.5)
-                    st.rerun()
-                else:
-                    st.error("ティッカーと株数を正しく入力してください")
+                else:  # 評価額から逆算（パターン2 & 3共通）
+                    if current_value_input <= 0:
+                        st.error("現在の評価額を入力してください")
+                        st.stop()
+                    
+                    # 現在価格を取得
+                    info = fetch_stock_info(ticker)
+                    current_price = info["current_price"]
+                    
+                    if current_price == 0:
+                        hist = fetch_stock_data(ticker, period="5d")
+                        if not hist.empty:
+                            current_price = float(hist["Close"].iloc[-1])
+                    
+                    if current_price == 0:
+                        st.error(f"❌ {ticker} の現在価格を取得できませんでした。ティッカーを確認してください。")
+                        st.stop()
+                    
+                    # 取得単価を逆算
+                    # 現在の評価額 = 現在価格 × 株数
+                    # ユーザーが入力した評価額から、取得単価を推定
+                    actual_current_value = current_price * shares
+                    final_cost_price = current_price * (current_value_input / actual_current_value)
+                
+                st.session_state["portfolio"].append({
+                    "ticker": ticker,
+                    "shares": shares,
+                    "cost_price": final_cost_price,
+                    "buy_date": str(buy_date),
+                })
+                st.success(f"✅ {ticker} を追加しました！")
+                time.sleep(0.5)
+                st.rerun()
 
         # 保有銘柄一覧
         if st.session_state["portfolio"]:
@@ -2950,11 +3010,70 @@ def render_main():
 
     if not portfolio:
         st.markdown("---")
+        
+        # 機能紹介
+        st.markdown(
+            """
+            ### 🚀 主要機能
+            
+            - 📊 **ポートフォリオ概要**: 総資産価値、損益、構成比率の可視化
+            - 📈 **パフォーマンス分析**: 累積リターン、リスク指標（シャープレシオ、VaR等）
+            - 🔬 **高度な分析**: リバランス提案、効率的フロンティア（MPT）
+            - 📰 **個別銘柄**: ローソク足チャート、関連ニュース
+            - 🔮 **高度なシミュレーション**: GBM、ブートストラップ、GARCH風など4手法
+            - 💰 **配当分析**: 配当カレンダー、年間配当推移、配当指標
+            - 🔥 **注目の株**: 直近3日間の値動きランキング（業界別）
+            - 🔗 **URL共有**: ポートフォリオを他の人と共有
+            """
+        )
+        
+        st.markdown("---")
+        
+        # データソースと免責事項
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown(
+                """
+                #### 📊 データソース
+                
+                すべての市場データは **[Yahoo Finance](https://finance.yahoo.com/)** から取得:
+                
+                - **株価データ**: リアルタイム株価（15-20分遅延）
+                - **企業情報**: 銘柄名、セクター、時価総額、PER
+                - **配当データ**: 配当履歴、配当利回り
+                - **ニュース**: 銘柄関連ニュース
+                - **為替レート**: USD/JPY為替レート
+                
+                **使用ライブラリ**: [`yfinance`](https://pypi.org/project/yfinance/)  
+                （非公式Yahoo Finance API）
+                """
+            )
+        
+        with col2:
+            st.markdown(
+                """
+                #### ⚠️ 免責事項
+                
+                - このアプリは **教育・研究目的** です
+                - 提供情報は **投資助言ではありません**
+                - 投資判断は **自己責任** で行ってください
+                - データ正確性は保証されません
+                - 過去の実績は将来を保証しません
+                - シミュレーションは確率的予測です
+                
+                **投資にはリスクが伴います。**  
+                **専門家にご相談ください。**
+                """
+            )
+        
+        st.markdown("---")
+        
         st.info("👈 サイドバーから銘柄を追加してください。"
                 "または共有URLから復元するか、CSVをインポートしてください。")
 
         # デモデータ
-        if st.button("🎮 デモデータで体験する"):
+        if st.button("🎮 デモデータで体験する", use_container_width=True, type="primary"):
             st.session_state["portfolio"] = [
                 {"ticker": "AAPL", "shares": 10, "cost_price": 150.0, "buy_date": "2024-01-15"},
                 {"ticker": "GOOGL", "shares": 5, "cost_price": 140.0, "buy_date": "2024-02-01"},
@@ -2964,6 +3083,25 @@ def render_main():
             ]
             st.rerun()
         return
+
+    # ポートフォリオが存在する場合 - データソースを折りたたみ表示
+    with st.expander("📊 データソース & 免責事項", expanded=False):
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown(
+                """
+                **データソース**: [Yahoo Finance](https://finance.yahoo.com/)  
+                **ライブラリ**: `yfinance` (非公式API)  
+                **更新頻度**: 株価 15-20分遅延
+                """
+            )
+        with col2:
+            st.markdown(
+                """
+                **免責**: 教育目的。投資助言ではありません。  
+                投資判断は自己責任で。リスクにご注意ください。
+                """
+            )
 
     # データ取得
     with st.spinner("📡 最新データを取得中..."):
