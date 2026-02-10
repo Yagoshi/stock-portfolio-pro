@@ -1189,6 +1189,191 @@ def run_monte_carlo(returns: pd.Series, initial_value: float,
     return price_paths
 
 
+def run_monte_carlo_gbm(returns: pd.Series, initial_value: float,
+                        days: int = 252, n_simulations: int = 200) -> np.ndarray:
+    """
+    幾何ブラウン運動（GBM）による高度なモンテカルロシミュレーション
+    
+    dS/S = μdt + σdW
+    
+    Args:
+        returns: 過去リターンデータ
+        initial_value: 初期資産額
+        days: 予測日数
+        n_simulations: シミュレーション回数
+    
+    Returns:
+        シミュレーション結果の配列
+    """
+    if returns.empty or initial_value <= 0:
+        return np.array([])
+    
+    # パラメータ推定
+    mu = returns.mean()  # ドリフト
+    sigma = returns.std()  # ボラティリティ
+    
+    # 時間刻み
+    dt = 1
+    
+    # シミュレーション配列
+    paths = np.zeros((n_simulations, days + 1))
+    paths[:, 0] = initial_value
+    
+    # ブラウン運動
+    for t in range(1, days + 1):
+        # ウィーナー過程の増分
+        dW = np.random.normal(0, np.sqrt(dt), n_simulations)
+        
+        # 幾何ブラウン運動
+        paths[:, t] = paths[:, t-1] * np.exp((mu - 0.5 * sigma**2) * dt + sigma * dW)
+    
+    return paths
+
+
+def run_monte_carlo_bootstrap(returns: pd.Series, initial_value: float,
+                              days: int = 252, n_simulations: int = 200) -> np.ndarray:
+    """
+    ブートストラップ法によるモンテカルロシミュレーション
+    過去の実際のリターンからランダムサンプリング（分布を仮定しない）
+    
+    Args:
+        returns: 過去リターンデータ
+        initial_value: 初期資産額
+        days: 予測日数
+        n_simulations: シミュレーション回数
+    
+    Returns:
+        シミュレーション結果の配列
+    """
+    if returns.empty or initial_value <= 0:
+        return np.array([])
+    
+    paths = np.zeros((n_simulations, days + 1))
+    paths[:, 0] = initial_value
+    
+    returns_array = returns.values
+    
+    for t in range(1, days + 1):
+        # 過去のリターンからランダムにサンプリング（復元抽出）
+        sampled_returns = np.random.choice(returns_array, size=n_simulations, replace=True)
+        paths[:, t] = paths[:, t-1] * (1 + sampled_returns)
+    
+    return paths
+
+
+def run_monte_carlo_garch(returns: pd.Series, initial_value: float,
+                          days: int = 252, n_simulations: int = 200) -> np.ndarray:
+    """
+    GARCHモデル風の時変ボラティリティを考慮したシミュレーション
+    （簡易版：直近のボラティリティを重視）
+    
+    Args:
+        returns: 過去リターンデータ
+        initial_value: 初期資産額
+        days: 予測日数
+        n_simulations: シミュレーション回数
+    
+    Returns:
+        シミュレーション結果の配列
+    """
+    if returns.empty or initial_value <= 0 or len(returns) < 30:
+        return np.array([])
+    
+    paths = np.zeros((n_simulations, days + 1))
+    paths[:, 0] = initial_value
+    
+    # 全期間のパラメータ
+    mu = returns.mean()
+    
+    # 直近30日のボラティリティ（より現実的）
+    recent_vol = returns.tail(30).std()
+    long_term_vol = returns.std()
+    
+    # ボラティリティの重み付き平均
+    sigma = 0.7 * recent_vol + 0.3 * long_term_vol
+    
+    for t in range(1, days + 1):
+        # ランダムショック
+        epsilon = np.random.normal(0, 1, n_simulations)
+        
+        # リターンの生成（時変ボラティリティ）
+        daily_returns = mu + sigma * epsilon
+        paths[:, t] = paths[:, t-1] * (1 + daily_returns)
+    
+    return paths
+
+
+def analyze_technical_indicators(returns: pd.Series, prices: pd.Series) -> Dict:
+    """
+    テクニカル指標を計算
+    
+    Args:
+        returns: リターン系列
+        prices: 価格系列
+    
+    Returns:
+        テクニカル指標の辞書
+    """
+    indicators = {}
+    
+    if prices.empty or len(prices) < 50:
+        return indicators
+    
+    # 移動平均
+    indicators['sma_20'] = prices.rolling(window=20).mean().iloc[-1]
+    indicators['sma_50'] = prices.rolling(window=50).mean().iloc[-1]
+    
+    if len(prices) >= 200:
+        indicators['sma_200'] = prices.rolling(window=200).mean().iloc[-1]
+    
+    # 現在価格
+    current_price = prices.iloc[-1]
+    indicators['current_price'] = current_price
+    
+    # トレンド判定
+    if 'sma_20' in indicators and 'sma_50' in indicators:
+        if current_price > indicators['sma_20'] > indicators['sma_50']:
+            indicators['trend'] = "強い上昇トレンド"
+        elif current_price > indicators['sma_20']:
+            indicators['trend'] = "上昇トレンド"
+        elif current_price < indicators['sma_20'] < indicators['sma_50']:
+            indicators['trend'] = "強い下降トレンド"
+        elif current_price < indicators['sma_20']:
+            indicators['trend'] = "下降トレンド"
+        else:
+            indicators['trend'] = "レンジ相場"
+    
+    # RSI（Relative Strength Index）
+    if len(returns) >= 14:
+        gains = returns[returns > 0]
+        losses = -returns[returns < 0]
+        
+        avg_gain = gains.tail(14).mean() if not gains.empty else 0
+        avg_loss = losses.tail(14).mean() if not losses.empty else 0
+        
+        if avg_loss != 0:
+            rs = avg_gain / avg_loss
+            rsi = 100 - (100 / (1 + rs))
+            indicators['rsi'] = rsi
+            
+            if rsi > 70:
+                indicators['rsi_signal'] = "買われすぎ"
+            elif rsi < 30:
+                indicators['rsi_signal'] = "売られすぎ"
+            else:
+                indicators['rsi_signal'] = "中立"
+    
+    # ボラティリティ（標準偏差の年率換算）
+    indicators['volatility'] = returns.std() * np.sqrt(TRADING_DAYS)
+    
+    # 直近のモメンタム
+    if len(prices) >= 20:
+        momentum_20 = (prices.iloc[-1] / prices.iloc[-20] - 1) * 100
+        indicators['momentum_20d'] = momentum_20
+    
+    return indicators
+
+
 def create_monte_carlo_chart(price_paths: np.ndarray, initial_value: float,
                              years: int = 10) -> go.Figure:
     """モンテカルロ結果をPlotlyチャートに描画"""
@@ -3238,53 +3423,176 @@ def render_main():
     # ── タブ5: モンテカルロ・シミュレーション ──
     with tab5:
         st.markdown(
-            '<div class="section-header">🔮 モンテカルロ・シミュレーション</div>',
+            '<div class="section-header">🔮 高度なモンテカルロ・シミュレーション</div>',
             unsafe_allow_html=True,
         )
         st.caption(
-            "過去のリターン分布に基づいて、今後の資産推移を確率的にシミュレーションします。"
-            "将来の正確な予測ではなく、リスクの可視化を目的としたツールです。"
+            "複数のシミュレーション手法を使って、今後の資産推移を確率的に予測します。"
+            "将来の正確な予測ではなく、リスクとリターンの可視化を目的としたツールです。"
         )
 
         if port_returns.empty or len(port_returns) < 20:
             st.info("シミュレーションにはより多くの過去データが必要です。")
         else:
-            # パラメータ設定
-            col1, col2 = st.columns(2)
+            # テクニカル分析（ポートフォリオ全体の価値推移から）
+            st.markdown("##### 📊 現在の市場状況分析")
+            
+            # ポートフォリオ価値の時系列を構築
+            portfolio_values = (1 + port_returns).cumprod() * summary["total_value_jpy"]
+            
+            tech_indicators = analyze_technical_indicators(port_returns, portfolio_values)
+            
+            if tech_indicators:
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    if 'trend' in tech_indicators:
+                        st.metric("トレンド", tech_indicators['trend'])
+                
+                with col2:
+                    if 'rsi' in tech_indicators:
+                        rsi_val = tech_indicators['rsi']
+                        st.metric("RSI", f"{rsi_val:.1f}", tech_indicators.get('rsi_signal', ''))
+                
+                with col3:
+                    if 'volatility' in tech_indicators:
+                        vol_val = tech_indicators['volatility']
+                        st.metric("年率ボラティリティ", f"{vol_val*100:.1f}%")
+                
+                with col4:
+                    if 'momentum_20d' in tech_indicators:
+                        mom_val = tech_indicators['momentum_20d']
+                        st.metric("20日モメンタム", f"{mom_val:+.1f}%")
+            
+            st.markdown("---")
+            
+            # シミュレーション設定
+            st.markdown("##### ⚙️ シミュレーション設定")
+            
+            col1, col2, col3 = st.columns(3)
+            
             with col1:
-                sim_years = st.slider(
-                    "予測期間（年）", min_value=1, max_value=20,
-                    value=10, step=1,
+                # 期間の単位選択
+                period_unit = st.radio(
+                    "期間の単位",
+                    ["週", "月", "年"],
+                    horizontal=True,
+                    key="sim_period_unit",
                 )
+            
             with col2:
+                # 期間の値
+                if period_unit == "週":
+                    period_value = st.slider(
+                        "予測期間（週）",
+                        min_value=1,
+                        max_value=52,
+                        value=12,
+                        step=1,
+                        key="sim_weeks",
+                    )
+                    sim_days = period_value * 5  # 営業日ベース
+                    display_period = f"{period_value}週間"
+                    
+                elif period_unit == "月":
+                    period_value = st.slider(
+                        "予測期間（月）",
+                        min_value=1,
+                        max_value=60,
+                        value=12,
+                        step=1,
+                        key="sim_months",
+                    )
+                    sim_days = int(period_value * 21)  # 1ヶ月≒21営業日
+                    display_period = f"{period_value}ヶ月"
+                    
+                else:  # 年
+                    period_value = st.slider(
+                        "予測期間（年）",
+                        min_value=1,
+                        max_value=20,
+                        value=5,
+                        step=1,
+                        key="sim_years",
+                    )
+                    sim_days = period_value * TRADING_DAYS
+                    display_period = f"{period_value}年"
+            
+            with col3:
                 n_sims = st.select_slider(
                     "シナリオ数",
-                    options=[100, 200, 500, 1000],
-                    value=200,
+                    options=[100, 200, 500, 1000, 2000],
+                    value=500,
+                    key="sim_scenarios",
                 )
-
+            
+            # シミュレーション手法の選択
+            st.markdown("##### 🎯 シミュレーション手法")
+            
+            sim_method = st.radio(
+                "手法を選択",
+                [
+                    "標準（正規分布）",
+                    "幾何ブラウン運動（GBM）",
+                    "ブートストラップ法",
+                    "時変ボラティリティ（GARCH風）"
+                ],
+                help=(
+                    "**標準**: 過去リターンの平均・分散から正規分布を仮定\n\n"
+                    "**GBM**: 連続時間の確率過程モデル（最も理論的）\n\n"
+                    "**ブートストラップ**: 過去の実際のリターンから抽出（分布を仮定しない）\n\n"
+                    "**時変ボラティリティ**: 直近のボラティリティを重視（より現実的）"
+                ),
+                horizontal=False,
+                key="sim_method",
+            )
+            
             initial_value = summary["total_value_jpy"]
 
             if st.button("▶ シミュレーション実行", use_container_width=True,
-                         type="primary"):
-                with st.spinner("シミュレーション実行中..."):
-                    paths = run_monte_carlo(
-                        port_returns, initial_value,
-                        years=sim_years, n_simulations=n_sims,
-                    )
+                         type="primary", key="run_simulation"):
+                with st.spinner(f"{sim_method}で{display_period}のシミュレーション実行中..."):
+                    # 手法に応じてシミュレーション実行
+                    if sim_method == "標準（正規分布）":
+                        paths = run_monte_carlo(
+                            port_returns, initial_value,
+                            years=sim_days/TRADING_DAYS, n_simulations=n_sims,
+                        )
+                    elif sim_method == "幾何ブラウン運動（GBM）":
+                        paths = run_monte_carlo_gbm(
+                            port_returns, initial_value,
+                            days=sim_days, n_simulations=n_sims,
+                        )
+                    elif sim_method == "ブートストラップ法":
+                        paths = run_monte_carlo_bootstrap(
+                            port_returns, initial_value,
+                            days=sim_days, n_simulations=n_sims,
+                        )
+                    else:  # 時変ボラティリティ
+                        paths = run_monte_carlo_garch(
+                            port_returns, initial_value,
+                            days=sim_days, n_simulations=n_sims,
+                        )
 
                 if paths.size > 0:
                     # チャート描画
                     st.plotly_chart(
-                        create_monte_carlo_chart(paths, initial_value, years=sim_years),
+                        create_monte_carlo_chart(
+                            paths, initial_value, 
+                            years=sim_days/TRADING_DAYS
+                        ),
                         use_container_width=True,
                     )
 
                     # 最終日の分布から指標を算出
                     final_values = paths[:, -1]
+                    p5 = np.percentile(final_values, 5)
                     p10 = np.percentile(final_values, 10)
+                    p25 = np.percentile(final_values, 25)
                     p50 = np.percentile(final_values, 50)
+                    p75 = np.percentile(final_values, 75)
                     p90 = np.percentile(final_values, 90)
+                    p95 = np.percentile(final_values, 95)
 
                     # KPIカードで結果表示
                     st.markdown(
@@ -3321,22 +3629,88 @@ def render_main():
                             is_loss=False,
                         ), unsafe_allow_html=True)
 
+                    # 詳細統計
+                    st.markdown("##### 📈 詳細統計")
+                    
+                    stat_col1, stat_col2, stat_col3 = st.columns(3)
+                    
+                    with stat_col1:
+                        st.metric("最小値（5%点）", format_jpy(p5))
+                        st.metric("第1四分位（25%）", format_jpy(p25))
+                    
+                    with stat_col2:
+                        st.metric("中央値（50%）", format_jpy(p50))
+                        st.metric("平均値", format_jpy(final_values.mean()))
+                    
+                    with stat_col3:
+                        st.metric("第3四分位（75%）", format_jpy(p75))
+                        st.metric("最大値（95%点）", format_jpy(p95))
+
                     # 確率分析
                     prob_profit = (final_values > initial_value).mean() * 100
                     prob_double = (final_values > initial_value * 2).mean() * 100
+                    prob_150 = (final_values > initial_value * 1.5).mean() * 100
                     prob_halve = (final_values < initial_value * 0.5).mean() * 100
+                    prob_loss_20 = (final_values < initial_value * 0.8).mean() * 100
 
                     st.markdown(
                         '<div class="section-header">確率分析</div>',
                         unsafe_allow_html=True,
                     )
-                    pc1, pc2, pc3 = st.columns(3)
+                    
+                    pc1, pc2, pc3, pc4, pc5 = st.columns(5)
                     with pc1:
-                        st.metric("元本プラスの確率", f"{prob_profit:.1f}%")
+                        st.metric("元本プラス", f"{prob_profit:.1f}%")
                     with pc2:
-                        st.metric("資産2倍の確率", f"{prob_double:.1f}%")
+                        st.metric("1.5倍以上", f"{prob_150:.1f}%")
                     with pc3:
-                        st.metric("資産半減の確率", f"{prob_halve:.1f}%")
+                        st.metric("2倍以上", f"{prob_double:.1f}%")
+                    with pc4:
+                        st.metric("20%以上の損失", f"{prob_loss_20:.1f}%")
+                    with pc5:
+                        st.metric("半減以下", f"{prob_halve:.1f}%")
+                    
+                    # 分布のヒストグラム
+                    st.markdown("##### 📊 最終資産額の分布")
+                    
+                    fig_hist = go.Figure()
+                    
+                    fig_hist.add_trace(go.Histogram(
+                        x=final_values,
+                        nbinsx=50,
+                        marker=dict(
+                            color="#3B82F6",
+                            line=dict(color="#1A1F2E", width=1),
+                        ),
+                        name="最終資産額",
+                        hovertemplate="資産額: ¥%{x:,.0f}<br>頻度: %{y}<extra></extra>",
+                    ))
+                    
+                    # 初期値のライン
+                    fig_hist.add_vline(
+                        x=initial_value,
+                        line_dash="dash",
+                        line_color="#F59E0B",
+                        annotation_text="初期値",
+                        annotation_position="top",
+                    )
+                    
+                    # 中央値のライン
+                    fig_hist.add_vline(
+                        x=p50,
+                        line_dash="dot",
+                        line_color="#00D4AA",
+                        annotation_text="中央値",
+                        annotation_position="top",
+                    )
+                    
+                    fig_hist.update_layout(**base_layout(
+                        xaxis_title="最終資産額 (¥)",
+                        yaxis_title="頻度",
+                        height=400,
+                    ))
+                    
+                    st.plotly_chart(fig_hist, use_container_width=True)
 
                 else:
                     st.error("シミュレーションの実行に失敗しました。")
