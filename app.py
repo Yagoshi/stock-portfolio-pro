@@ -1951,6 +1951,8 @@ def create_efficient_frontier_chart(frontier_data: Dict) -> go.Figure:
     
     # シャープレシオでカラーマップ
     sharpe_ratios = (returns / 100 - RISK_FREE_RATE) / (volatilities / 100)
+    # NaNやInfを除去
+    sharpe_ratios = np.nan_to_num(sharpe_ratios, nan=0.0, posinf=3.0, neginf=-3.0)
     
     fig.add_trace(
         go.Scatter(
@@ -1963,11 +1965,7 @@ def create_efficient_frontier_chart(frontier_data: Dict) -> go.Figure:
                 colorscale="Viridis",
                 showscale=True,
                 colorbar=dict(
-                    title="Sharpe<br>Ratio",
-                    titleside="right",
-                    tickmode="linear",
-                    tick0=0,
-                    dtick=0.5,
+                    title=dict(text="Sharpe Ratio", side="right"),
                 ),
                 line=dict(width=0),
             ),
